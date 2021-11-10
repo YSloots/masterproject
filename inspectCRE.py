@@ -103,15 +103,15 @@ print(CRE_exponential.parameters['spectral_index'],'\n')
 
 def spectral_index_function(x,y,z):
     # index range
-    amax = 2
-    amin = 4
+    amax = -2
+    amin = -4
     # galaxy scale
     z_scale = 2
     r_scale = 10
     # now scale profile to square
     r           = np.sqrt(x**2 + y**2)
     scaled_dist = np.sqrt((z/z_scale)**2 + (r/r_scale)**2)/2
-    return -(amin + (amax-amin)*scaled_dist)
+    return amin + (amax-amin)*scaled_dist
 
 alpha = spectral_index_function
 
