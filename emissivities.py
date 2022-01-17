@@ -1,7 +1,7 @@
 # Main imports and settings
 import matplotlib.pyplot as plt
 import numpy as np
-path = '/home/ysloots/MasterProject/project/figures/'
+path = '/home/ysloots/masterproject/project/figures/'
 
 # Define units and constants
 from astropy import units as u
