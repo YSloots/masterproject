@@ -81,12 +81,16 @@ plot_slices(ne_data, cartesian_grid, path+'thermalelectrons.png')
 
 #%% Now inspect CRE grid constant index
 
+# fields.BrokenPowerlawCosmicRayElectrons()
+
+
+#( fields.GalpropCosmicRayElectrons( requires to be on the same grid ) maybe dont do this)
 
 CRE_exponential = fields.PowerlawCosmicRayElectrons(
     grid            = cartesian_grid,
     parameters      ={'scale_radius':5.0*u.kpc,
                       'scale_height':1.0*u.kpc,
-                      'spectral_index': -3})
+                      'spectral_index': -3)
 
 # Acces and plot profiles
 CRE_data = CRE_exponential.get_data()#*u.cm**3

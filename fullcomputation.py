@@ -47,7 +47,7 @@ Using integralF() takes a longer time and results in a fraction of
 Jspe/Jint between [0.9935, 0.995].
 
 The results are and look slightly different meaning that the fit does
-not perfectly cover the integration result. However the oder of accuraty
+not perfectly cover the integration result. However the order of accuracy
 is similar. One thing to note is that for values of alpha closer to zero
 the result Jspe/Jint seems to be exponentially increasing. Why?
 """

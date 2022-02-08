@@ -5,6 +5,7 @@ Created on Mon Jan 17 15:09:44 2022
 @author: ysloots
 """
 
+
 # Main imports and settings
 import matplotlib.pyplot as plt
 import numpy as np
@@ -97,9 +98,9 @@ def critical_freq(gamma):
 
 def emission_power_density(gamma, wobs, Bper):
     wc = critical_freq(gamma)
-    x  = np.flip(wobs/wc)
-    F  = np.flip(integralF(x))
-    #F  = np.flip(polyfitF(x))
+    x  = np.flipud(wobs/wc)
+    #F  = np.flip(integralF(x))
+    F  = np.flipud(polyfitF(x))
     return ((np.sqrt(3)*electron**3*Bper)/(2*pi*me*c**2) * F).decompose(bases=u.cgs.bases)
 
 
@@ -122,7 +123,8 @@ powergrid = calc_power_grid()
 print(np.shape(powergrid))
 
 plt.contourf(energygrid, wobs/(2*pi), powergrid, 30, cmap='Blues')
-plt.colorbar()
+cb = plt.colorbar()
+cb.set_label("Powerdensity (kgm2/s2)")
 
 plt.title("Synchrotron emission power density")
 plt.ylabel("Observed frequency (Hz)")
@@ -130,11 +132,23 @@ plt.xlabel("CR-electron energy (eV)")
 plt.yscale('log')
 plt.xscale('log')
 
-plt.savefig(path + "emissionpowerdensity_Integrated.png")
+plt.savefig(path + "emissionpowerdensity_fit2D.png")
 plt.close('all')
 
+#%%
 
+gammalist = [1e3, 2e3, 3e3]
+for g in gammalist:
+    plt.plot(wobs, emission_power_density(g, wobs, Bper), lw=2, label="gamma = {:.0e}".format(g))
 
+plt.title("Synchrotron emission power density \n for different cre energies")
+plt.xlabel("Emitting frequency (Hz)")
+plt.ylabel("Powerdensity (kgm2/s2)")
+plt.xscale('log')
+plt.legend()
+
+plt.savefig(path + "emissionpowerdensity_fit.png")
+plt.close('all')
 
 
 
