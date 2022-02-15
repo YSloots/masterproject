@@ -20,10 +20,73 @@ equiv_B = [(u.G, gauss_B, lambda x: x, lambda x: x)]
 # Script dependancies
 import matplotlib.pyplot as plt
 
-## Define the Simulator class
-class SynchrotronEmissivitySimulator(Simulator):
+#%% Usefull functions for inspection 
+
+figpath = 'figures/'
+
+def plot_slices(data, grid, fname=' '):
+    unit       = data.unit
+    resolution = grid.resolution    
+    
+    # Take a horizontal and a vertical slice through the middle of the box
+    hor_slice = data[:,:,int(resolution[2]/2)]/unit 
+    ver_slice = data[int(resolution[0]/2),:,:]/unit
+    x = grid.x[:,0,0]/u.kpc
+    y = grid.y[0,:,0]/u.kpc
+    z = grid.z[0,0,:]/u.kpc
+
+    titles = ['xy-slice z=0','yz-slice x=0']
+    slices = [hor_slice, ver_slice]
+    coords = [[x,y], [x,z]]
+
+    maxvalue = np.max(data)/unit
+    
+    print(slices, coords, maxvalue)
+    
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(15,5), sharey = False)
+    n = 0
+    for ax in axes.flat:
+        #im = ax.contourf(x, y, slices[n], 40, cmap='RdGy', vmin = -range, vmax = range)
+        im = ax.contourf(coords[n][0], coords[n][1], slices[n],
+    		     40, cmap='Blues', vmin = 0, vmax = maxvalue)
+        ax.title.set_text(titles[n])
+        ax.set_xlabel('kpc')
+        ax.set_ylabel('kpc')
+        n += 1
+        
+        
+    # fake subplot for colorbar
+    fakez = np.zeros((len(y),len(x)))
+    fakez[0,0] = 0 # fake pixels for colorbar
+    fakez[0,1] = maxvalue
+    ax4 = fig.add_subplot(1,3,1)
+    im = ax4.contourf(x, y, fakez, 40, cmap='Blues', vmin = 0, vmax = maxvalue)
+    cbar_ax = fig.add_axes([0.92, 0.10, 0.01, 0.8])
+    cbar = plt.colorbar(im, cax = cbar_ax)
+    cbar.set_label(unit, rotation=0)
+    plt.delaxes(ax4)
+    
+    fig.savefig(figpath+fname)
+    plt.close('all')
+    
+    return
+
+
+def make_unitvector_grid(imagine_grid, position):
+    unit = position.unit # need to check that units are the same
+    unitvectors = []
+    for x,y,z in zip(imagine_grid.x.ravel()/unit,imagine_grid.y.ravel()/unit,imagine_grid.z.ravel()/unit):
+        v = np.array([x,y,z])-position/unit
+        unitvectors.append(v/np.linalg.norm(v))
+    return np.reshape(unitvectors, tuple(imagine_grid.resolution)+(3,))*unit
+
+
+#%% Define the Simulator class
+
+class SpectralSynchrotronEmissivitySimulator(Simulator):
     """
-    Simulator for synchrotron emissivity 
+    Simulator for synchrotron emissivity. Assumes a constant powerlaw spectrum
+    throughout the entire Galaxy.
     
     """
     
@@ -41,12 +104,15 @@ class SynchrotronEmissivitySimulator(Simulator):
         # Measurements already contains the observing frequency for the sync data
         self.observing_frequency = observing_frequency
         self.resolution          = grid.resolution
+        self.grid                = grid
         
-        # After setting observer position make unit vectorgrid
-        unit = position.unit # need to check that units are the same
+        # After setting observer position make unit vectorgrid.
+        # Only want to do this once since this will never change 
+        # even when sampling over different fields.
+        unit = observer_position.unit # need to check that grid.unit and position.unit are the same
         unitvectors = []
         for x,y,z in zip(grid.x.ravel()/unit,grid.y.ravel()/unit,grid.z.ravel()/unit):
-            v = np.array([x,y,z])-position/unit
+            v = np.array([x,y,z])-observer_position/unit
             unitvectors.append(v/np.linalg.norm(v))
         #print(tuple(self.resolution)+(3,))
         self.unitvector_grid = np.reshape(unitvectors, tuple(self.resolution)+(3,))
@@ -55,14 +121,13 @@ class SynchrotronEmissivitySimulator(Simulator):
     def _spectral_integralF(self, mu):
         return 2**(mu+1)/(mu+2) * gammafunc(mu/2 + 7./3)*gammafunc(mu/2+2./3)    
     
-    def _spectral_total_emissivity(self, Bperpendicular, ncre):
+    def _spectral_total_emissivity(self, Bper, ncre):
         vobs  = self.observing_frequency
-        alpha = self.spectral_index
+        #alpha = self.fields.parameters['spectral_index'] needs to be implemented
         fraction1 = (np.sqrt(3)*electron**3*Bper*ncre/(8*pi*me*c**2)).decompose(bases=u.cgs.bases)
         fraction2 = (4*np.pi*vobs*me*c/(3*electron*Bper)).decompose(bases=u.cgs.bases)
-        integral  = spectral_integralF((-alpha-3)/2)
+        integral  = spectral_integralF( (-alpha-3)/2 )
         return fraction1 * fraction2**((1+alpha)/2) * integral
-    
     
     def simulate(self, key, coords_dict, realization_id, output_units):
         """Calculate a 3D box with synchrotron emissivities"""        
@@ -72,23 +137,28 @@ class SynchrotronEmissivitySimulator(Simulator):
         ncre_grid = self.fields['cosmic_ray_electron_density']  # in units cm^-3
         B_grid    = self.fields['magnetic_field']               # in units uG
         u_grid    = self.unitvector_grid
-        print(B_grid)
-        print(u_grid)
-        print(B_grid*u_grid)
+        #print(B_grid)
+        #print(u_grid)
+        #print(B_grid*u_grid)
         
         # Get the perpendicular component of the GMF for all grid points
-        Bpara           = np.empty(np.shape(B_grid))*B_grid.unit
-        Bpara[:,:,:,0]  = np.sum(B_grid*u_grid,axis=3)*u_grid[:,:,:,0]
-        Bpara[:,:,:,1]  = np.sum(B_grid*u_grid,axis=3)*u_grid[:,:,:,1]
-        Bpara[:,:,:,2]  = np.sum(B_grid*u_grid,axis=3)*u_grid[:,:,:,2]
-        print(Bpara)
+        Bpara           = np.zeros(np.shape(B_grid)) * B_grid.unit
+        amplitudes      = np.sum(B_grid*u_grid, axis=3)
+        Bpara[:,:,:,0]  = amplitudes * u_grid[:,:,:,0]
+        Bpara[:,:,:,1]  = amplitudes * u_grid[:,:,:,1]
+        Bpara[:,:,:,2]  = amplitudes * u_grid[:,:,:,2]
+        #print(Bpara)
         Bperp                = B_grid - Bpara
         Bperp_amplitude_grid = np.sqrt(np.sum(Bperp*Bperp,axis=3))
-        print(Bperp_amplitude_grid)        
+        #print(Bperp_amplitude_grid)        
+        
+        # just for testing 
+        plot_slices(Bperp_amplitude_grid, self.grid, 'Bperp_amplitudes.png')        
         
         # Calculate grid of emissivity values
-        emissivity_grid = self._spectral_total_emissivity(Bperp_amplitude_grid, ncre_grid)
-        
+        #emissivity_grid = self._spectral_total_emissivity(Bperp_amplitude_grid, ncre_grid)
+        #emissivity_grid = amplitudes/amplitudes.unit * u.erg.cgs # not true but dummy grid used to develop plotting in the meantime
+        emissivity_grid = np.arange(Npoints) * u.erg.cgs
         # Initiate Galactic grid that will contain our emissivities
         #emissivity_grid = np.zeros(self.resolution)
         # If ncre follows a single powerlaw use spectral emissivity funciton
@@ -99,47 +169,36 @@ class SynchrotronEmissivitySimulator(Simulator):
         
         return emissivity_grid
 
-## Setup simple test data and environment
+
+#%% Setup simple test data and physical fields
 
 # Fake data dictionary for LOS HII synchrotron measurements
 freq      = 0.09*GHz
 Npoints   = 10
 fake_lat  = 360*np.linspace(0,1,Npoints)*u.deg
 fake_lon  = np.zeros(Npoints)
-fake_dist = np.arange(1,Npoints+1)
-fake_j    = np.arange(10,Npoints+10)
-fake_jerr = fake_j/2
-fake_data = {'emissivity': fake_j/fake_dist,
-             'err': fake_jerr/fake_dist,
+fake_j    = np.arange(Npoints)
+fake_jerr = fake_j/10
+fake_data = {'emissivity': fake_j,
+             'err': fake_jerr,
              'lat': fake_lat,
              'lon': fake_lon}
 fake_dset = img.observables.TabularDataset(fake_data,
                                            name='sync',
                                            tag='I',
                                            frequency=freq,
-                                           units=u.erg.cgs/u.cm.cgs,
+                                           units=u.erg.cgs,
                                            data_col='emissivity',
                                            err_col='err',
                                            lat_col='lat',
                                            lon_col='lon')
 mea = img.observables.Measurements(fake_dset)
-#print(mea.keys())
-#print()
-
 
 # Setup coordinate grid
 cartesian_grid = img.fields.UniformGrid(box=[[-15*u.kpc, 15*u.kpc],
                                              [-15*u.kpc, 15*u.kpc],
-                                             [-5*u.kpc, 5*u.kpc]],
+                                             [-15*u.kpc, 15*u.kpc]],
                                              resolution = [3,3,3])
-
-def make_unitvector_grid(imagine_grid, position):
-    unit = position.unit # need to check that units are the same
-    unitvectors = []
-    for x,y,z in zip(imagine_grid.x.ravel()/unit,imagine_grid.y.ravel()/unit,imagine_grid.z.ravel()/unit):
-        v = np.array([x,y,z])-position/unit
-        unitvectors.append(v/np.linalg.norm(v))
-    return np.reshape(unitvectors, tuple(imagine_grid.resolution)+(3,))*unit
 
 # Cosmic-Ray Electron Model
 powerCRE_exponential = fields.PowerlawCosmicRayElectrons(
@@ -148,28 +207,26 @@ powerCRE_exponential = fields.PowerlawCosmicRayElectrons(
                        'scale_height':1.0*u.kpc,
                        'spectral_index':-3  })
 
-#print(dir(powerCRE_exponential))
-
 # Magnetic Field Model
 Bfield = fields.ConstantMagneticField(
     grid = cartesian_grid,
     ensemble_size= 1,
     parameters={'Bx': 0*u.microgauss,
-                'By': 1*u.microgauss,
-                'Bz': 2*u.microgauss})
-#print(Bfield.get_data().ravel())
+                'By': 0*u.microgauss,
+                'Bz': 1*u.microgauss})
 
-## Call the simulator
+
+#%% Call the simulator
 
 vobs     = 90*MHz
-position = np.array([-8.5,0,0])*u.kpc
+observer = np.array([-15,0,0])*u.kpc
 
-test_sim   = SynchrotronEmissivitySimulator(mea,vobs,position,cartesian_grid) # create instance
-simulation = test_sim([Bfield, powerCRE_exponential]) # call instance again with the required field types
+test_sim   = SpectralSynchrotronEmissivitySimulator(mea,vobs,observer,cartesian_grid) # create instance
+simulation = test_sim([powerCRE_exponential, Bfield]) # call instance again with the required field types
 
 
 
-#print(simulation)
+print(simulation)
 
 
 
