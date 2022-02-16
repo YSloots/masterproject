@@ -300,6 +300,14 @@ def spectral_total_emissivity(vobs, alpha):
     integral  = spectral_integralF((-alpha-3)/2)
     return fraction1 * fraction2**((1+alpha)/2) * integral
 
+def spectral_total_emissivity2(vobs, alpha):
+    fraction1 = (np.sqrt(3)*electron**3*n0/(8*pi*me*c**2))#.decompose(bases=u.cgs.bases)
+    fraction2 = (4*pi*vobs*me*c/(3*electron))#.decompose(bases=u.cgs.bases)
+    integral  = spectral_integralF((-alpha-3)/2)
+    emissivity = fraction1 * fraction2**((1+alpha)/2) * Bper**((1-alpha)/2)* integral
+    print(fraction1.unit, fraction2.unit, Bper.unit, emissivity.unit)
+    return emissivity
+
 def emission_power_density(gamma, wobs, Bper):
     wc = critical_freq(gamma)
     x  = np.flip(wobs/wc)

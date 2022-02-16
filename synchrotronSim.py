@@ -14,8 +14,9 @@ c     = cons.c.cgs
 electron = (cons.e).gauss
 
 # Units definitions since astropy doesnt handle [B]_cgs well
-gauss_B = (u.g/u.cm)**(0.5)/u.s
-equiv_B = [(u.G, gauss_B, lambda x: x, lambda x: x)]
+gauss_B  = (u.g/u.cm)**(0.5)/u.s
+equiv_B  = [(u.G, gauss_B, lambda x: x, lambda x: x)]
+ugauss_B = 1e-6 * gauss_B
 
 # Script dependancies
 import matplotlib.pyplot as plt
@@ -29,7 +30,7 @@ def plot_slices(data, grid, fname=' '):
     resolution = grid.resolution    
     
     # Take a horizontal and a vertical slice through the middle of the box
-    print("Taking index", int(resolution[2]/2))
+    #print("Taking slicing index", int(resolution[2]/2))
     hor_slice = data[:,:,int(resolution[2]/2)]/unit 
     ver_slice = data[int(resolution[0]/2),:,:]/unit
     x = grid.x[:,0,0]/u.kpc
@@ -43,7 +44,7 @@ def plot_slices(data, grid, fname=' '):
 
     maxvalue = np.max(data)/unit
     
-    print(slices, coords, maxvalue)
+    #print(slices, coords, maxvalue)
     
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(15,5), sharey = False)
     n = 0
@@ -106,7 +107,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         # Measurements already contains the observing frequency for the sync data
         self.observing_frequency = observing_frequency
         self.resolution          = grid.resolution
-        self.grid                = grid
+        self.grid                = grid # only needed for plotting and testing
         
         # After setting observer position make unit vectorgrid.
         # Only want to do this once since this will never change 
@@ -115,7 +116,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         unitvectors = []
         for x,y,z in zip(grid.x.ravel()/unit,grid.y.ravel()/unit,grid.z.ravel()/unit):
             v = np.array([x,y,z])-observer_position/unit
-            print(v)
+            #print(v)
             normv = np.linalg.norm(v)
             if normv == 0: # special case where the observer is inside one of the grid points
                 unitvectors.append(v)
@@ -131,23 +132,28 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
     
     def _spectral_total_emissivity(self, Bper, ncre):
         vobs  = self.observing_frequency
-        #alpha = self.fields.parameters['spectral_index'] needs to be implemented
-        fraction1 = (np.sqrt(3)*electron**3*Bper*ncre/(8*pi*me*c**2)).decompose(bases=u.cgs.bases)
-        fraction2 = (4*np.pi*vobs*me*c/(3*electron*Bper)).decompose(bases=u.cgs.bases)
-        integral  = spectral_integralF( (-alpha-3)/2 )
-        return fraction1 * fraction2**((1+alpha)/2) * integral
+        alpha = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
+
+        fraction1 = (np.sqrt(3)*electron**3*ncre/(8*np.pi*me*c**2))#.decompose(bases=u.cgs.bases)
+        fraction2 = (4*np.pi*vobs*me*c/(3*electron))#.decompose(bases=u.cgs.bases)
+        integral  = self._spectral_integralF( (-alpha-3)/2 )
+
+        emissivities = fraction1 * fraction2**((1+alpha)/2) * Bper**((1-alpha)/2) * integral
+        print(fraction1.unit, ', ', fraction2.unit, ', ', Bper.unit, ', ', emissivities.unit)
+        return emissivities
     
     def simulate(self, key, coords_dict, realization_id, output_units):
         """Calculate a 3D box with synchrotron emissivities"""        
         print("Calling synchrotron simulator")
         
         # Acces required fields
+        alpha     = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
         ncre_grid = self.fields['cosmic_ray_electron_density']  # in units cm^-3
         B_grid    = self.fields['magnetic_field']               # in units uG
         u_grid    = self.unitvector_grid
-        print("Bgrid:\n",B_grid)
-        print("ugrid:\n",u_grid)
-        print("B*ugrid:\n",B_grid*u_grid)
+        #print("Bgrid:\n",B_grid)
+        #print("ugrid:\n",u_grid)
+        #print("B*ugrid:\n",B_grid*u_grid)
         
         # Get the perpendicular component of the GMF for all grid points
         Bpara           = np.zeros(np.shape(B_grid)) * B_grid.unit
@@ -155,18 +161,19 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         Bpara[:,:,:,0]  = amplitudes * u_grid[:,:,:,0]
         Bpara[:,:,:,1]  = amplitudes * u_grid[:,:,:,1]
         Bpara[:,:,:,2]  = amplitudes * u_grid[:,:,:,2]
-        print("Bpara:\n",Bpara)
+        #print("Bpara:\n",Bpara)
         Bperp                = B_grid - Bpara
         Bperp_amplitude_grid = np.sqrt(np.sum(Bperp*Bperp,axis=3))
-        print("Bperp_amp:\n",Bperp_amplitude_grid)        
+        #print("Bperp_amp:\n",Bperp_amplitude_grid)        
         
         # just for testing 
         plot_slices(Bperp_amplitude_grid, self.grid, 'Bperp_amplitudes.png')        
         
         # Calculate grid of emissivity values
-        #emissivity_grid = self._spectral_total_emissivity(Bperp_amplitude_grid, ncre_grid)
-        #emissivity_grid = amplitudes/amplitudes.unit * u.erg.cgs # not true but dummy grid used to develop plotting in the meantime
-        emissivity_grid = np.arange(Npoints) * u.erg.cgs
+        emissivity_grid = self._spectral_total_emissivity(Bperp_amplitude_grid, ncre_grid)
+        
+        plot_slices(emissivity_grid, self.grid, 'emissivity_cube.png')        
+        
         # Initiate Galactic grid that will contain our emissivities
         #emissivity_grid = np.zeros(self.resolution)
         # If ncre follows a single powerlaw use spectral emissivity funciton
@@ -175,7 +182,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         #else:
         #    raise TypeError("Incorrect cosmic-ray density field: Expected field of type \'powerlaw_cosmicray_electrons\', received "+ncre_grid.NAME)
         
-        return emissivity_grid
+        return np.arange(Npoints) * u.erg.cgs # whatever is returned has to have the same shape as the object in measurements
 
 
 #%% Setup simple test data and physical fields
