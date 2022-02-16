@@ -29,6 +29,7 @@ def plot_slices(data, grid, fname=' '):
     resolution = grid.resolution    
     
     # Take a horizontal and a vertical slice through the middle of the box
+    print("Taking index", int(resolution[2]/2))
     hor_slice = data[:,:,int(resolution[2]/2)]/unit 
     ver_slice = data[int(resolution[0]/2),:,:]/unit
     x = grid.x[:,0,0]/u.kpc
@@ -38,6 +39,7 @@ def plot_slices(data, grid, fname=' '):
     titles = ['xy-slice z=0','yz-slice x=0']
     slices = [hor_slice, ver_slice]
     coords = [[x,y], [x,z]]
+    clabel = [['x','y'], ['x','z']]
 
     maxvalue = np.max(data)/unit
     
@@ -50,8 +52,8 @@ def plot_slices(data, grid, fname=' '):
         im = ax.contourf(coords[n][0], coords[n][1], slices[n],
     		     40, cmap='Blues', vmin = 0, vmax = maxvalue)
         ax.title.set_text(titles[n])
-        ax.set_xlabel('kpc')
-        ax.set_ylabel('kpc')
+        ax.set_xlabel(clabel[n][0]+' kpc')
+        ax.set_ylabel(clabel[n][1]+' kpc')
         n += 1
         
         
@@ -113,7 +115,13 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         unitvectors = []
         for x,y,z in zip(grid.x.ravel()/unit,grid.y.ravel()/unit,grid.z.ravel()/unit):
             v = np.array([x,y,z])-observer_position/unit
-            unitvectors.append(v/np.linalg.norm(v))
+            print(v)
+            normv = np.linalg.norm(v)
+            if normv == 0: # special case where the observer is inside one of the grid points
+                unitvectors.append(v)
+            else:
+                unitvectors.append(v/normv)
+        
         #print(tuple(self.resolution)+(3,))
         self.unitvector_grid = np.reshape(unitvectors, tuple(self.resolution)+(3,))
         #print(self.unitvector_grid)
@@ -137,9 +145,9 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         ncre_grid = self.fields['cosmic_ray_electron_density']  # in units cm^-3
         B_grid    = self.fields['magnetic_field']               # in units uG
         u_grid    = self.unitvector_grid
-        #print(B_grid)
-        #print(u_grid)
-        #print(B_grid*u_grid)
+        print("Bgrid:\n",B_grid)
+        print("ugrid:\n",u_grid)
+        print("B*ugrid:\n",B_grid*u_grid)
         
         # Get the perpendicular component of the GMF for all grid points
         Bpara           = np.zeros(np.shape(B_grid)) * B_grid.unit
@@ -147,10 +155,10 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         Bpara[:,:,:,0]  = amplitudes * u_grid[:,:,:,0]
         Bpara[:,:,:,1]  = amplitudes * u_grid[:,:,:,1]
         Bpara[:,:,:,2]  = amplitudes * u_grid[:,:,:,2]
-        #print(Bpara)
+        print("Bpara:\n",Bpara)
         Bperp                = B_grid - Bpara
         Bperp_amplitude_grid = np.sqrt(np.sum(Bperp*Bperp,axis=3))
-        #print(Bperp_amplitude_grid)        
+        print("Bperp_amp:\n",Bperp_amplitude_grid)        
         
         # just for testing 
         plot_slices(Bperp_amplitude_grid, self.grid, 'Bperp_amplitudes.png')        
@@ -211,9 +219,9 @@ powerCRE_exponential = fields.PowerlawCosmicRayElectrons(
 Bfield = fields.ConstantMagneticField(
     grid = cartesian_grid,
     ensemble_size= 1,
-    parameters={'Bx': 0*u.microgauss,
+    parameters={'Bx': 1*u.microgauss,
                 'By': 0*u.microgauss,
-                'Bz': 1*u.microgauss})
+                'Bz': 0*u.microgauss})
 
 
 #%% Call the simulator
