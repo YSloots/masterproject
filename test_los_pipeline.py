@@ -24,59 +24,8 @@ ugauss_B = 1e-6 * gauss_B
 # Script dependancies
 import matplotlib.pyplot as plt
 
-#%% Usefull functions for inspection 
-
-figpath = 'figures/'
-
-def plot_slices(data, grid, fname=' '):
-    unit       = data.unit
-    resolution = grid.resolution    
-    
-    # Take a horizontal and a vertical slice through the middle of the box
-    #print("Taking slicing index", int(resolution[2]/2))
-    hor_slice = data[:,:,int(resolution[2]/2)]/unit 
-    ver_slice = data[int(resolution[0]/2),:,:]/unit
-    x = grid.x[:,0,0]/u.kpc
-    y = grid.y[0,:,0]/u.kpc
-    z = grid.z[0,0,:]/u.kpc
-
-    titles = ['xy-slice z=0','yz-slice x=0']
-    slices = [hor_slice, ver_slice]
-    coords = [[x,y], [x,z]]
-    clabel = [['x','y'], ['x','z']]
-
-    maxvalue = np.max(data)/unit
-    
-    #print(slices, coords, maxvalue)
-    
-    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(15,5), sharey = False)
-    n = 0
-    for ax in axes.flat:
-        #im = ax.contourf(x, y, slices[n], 40, cmap='RdGy', vmin = -range, vmax = range)
-        im = ax.contourf(coords[n][0], coords[n][1], slices[n],
-    		     40, cmap='Blues', vmin = 0, vmax = maxvalue)
-        ax.title.set_text(titles[n])
-        ax.set_xlabel(clabel[n][0]+' kpc')
-        ax.set_ylabel(clabel[n][1]+' kpc')
-        n += 1
-        
-        
-    # fake subplot for colorbar
-    fakez = np.zeros((len(y),len(x)))
-    fakez[0,0] = 0 # fake pixels for colorbar
-    fakez[0,1] = maxvalue
-    ax4 = fig.add_subplot(1,3,1)
-    im = ax4.contourf(x, y, fakez, 40, cmap='Blues', vmin = 0, vmax = maxvalue)
-    cbar_ax = fig.add_axes([0.92, 0.10, 0.01, 0.8])
-    cbar = plt.colorbar(im, cax = cbar_ax)
-    cbar.set_label(unit, rotation=0)
-    plt.delaxes(ax4)
-    
-    fig.savefig(figpath+fname)
-    plt.close('all')
-    
-    return
-
+# Run directory for pipeline
+rundir = 'runs/mockdata'
 
 #%% Define the Simulator class
 
@@ -167,11 +116,9 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
 
         start_points[behind] = end_points[behind] + np.reshape(lambdas[behind], newshape=(np.size(behind),1))*deltas[behind]
         
-        #print("Starts: \n", start_points)   
-        #print("Ends:   \n", end_points)
         
         self.los_distances = np.linalg.norm(end_points-start_points, axis=1)
-        #print("LOS lengths: ", self.los_distances)        
+   
         
         nstarts = self._make_nifty_points(start_points)
         nends   = self._make_nifty_points(end_points)
@@ -211,7 +158,6 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         
     def simulate(self, key, coords_dict, realization_id, output_units):
         """Calculate a 3D box with synchrotron emissivities"""        
-        print("Calling synchrotron simulator\n")
         
         # Acces required fields
         alpha     = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
@@ -221,117 +167,143 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         # Project to perpendicular component along line of sight
         Bperp_amplitude_grid = self._project_to_perpendicular(B_grid)        
         
-        # just for testing 
-        plot_slices(Bperp_amplitude_grid/ugauss_B*u.microgauss, self.grid, 'Bperp_amplitudes.png')        
-        
         # Calculate grid of emissivity values
         emissivity_grid = self._spectral_total_emissivity(Bperp_amplitude_grid, ncre_grid)
-        #print(emissivity_grid, '\n')        
-        
-        plot_slices(emissivity_grid, self.grid, 'emissivity_cube.png')
         
         # Do the los integration on the domain defined in init with the new emissivity grid
         HII_LOSemissivities = self.response(ift.Field(self.domain, emissivity_grid)).val_rw()
         HII_LOSemissivities *= emissivity_grid.unit * u.kpc # restore units
-        print("Emissivities: ")
-        print(HII_LOSemissivities, '\n') 
         
         # Need to convert to K/kpc units. Note that self.los_distances may not be correct when using e_dist for domain
         HII_LOSbrightness = c**2/(2*kb*self.observing_frequency**2)*HII_LOSemissivities/self.los_distances
-        print("Average brightness temperature: ")
-        print(HII_LOSbrightness.to(u.K/u.kpc), '\n')
+
         
-        return np.arange(Npoints)*u.K/u.kpc # whatever is returned has to have the same shape as the object in measurements
+        return HII_LOSbrightness # whatever is returned has to have the same shape as the object in measurements
 
 
-#%% Setup simple test data and physical fields
+#%% Make a simulated dataset with known model paramters
 
 
-# Setup coordinate grid
-cartesian_grid = img.fields.UniformGrid(box=[[-15*u.kpc, 15*u.kpc],
-                                             [-15*u.kpc, 15*u.kpc],
-                                             [-15*u.kpc, 15*u.kpc]],
-                                             resolution = [31,31,31])
+# Mock dataset
+Ndata = 100
+observing_frequency = 90*MHz
+dunit = u.K/u.kpc
+T     = np.zeros(Ndata)*dunit # placeholder
+T_err = np.zeros(Ndata)*dunit# placeholder
+lat   = 90*np.linspace(-1,1,Ndata)*u.deg
+lon   = 360*np.linspace(0,360,Ndata)*u.deg
 
-# Fake data dictionary for LOS HII synchrotron measurements
-freq      = 0.09*GHz
-Npoints   = 4
-fake_lat  = np.zeros(Npoints)*u.deg
-fake_lon  = np.zeros(Npoints)*u.deg
-
-# custom los for testing:
-fake_lon[2] = 90*u.deg  # positive y-direction
-fake_lon[3] = -90*u.deg # negative y-direction
-fake_lat[1] = 90*u.deg  # positive z-direction
-observer    = np.array([-15,0,0])*u.kpc # from the middle of the 3x3 cube side
-# -> integrating allong the x=-15-plane should give 15-central voxel
-
-fake_j    = np.arange(Npoints) * u.K/u.kpc
-fake_jerr = fake_j/10
-fake_data = {'emissivity': fake_j,
-             'err': fake_jerr,
-             'lat': fake_lat,
-             'lon': fake_lon}
+fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
 fake_dset = img.observables.TabularDataset(fake_data,
                                            name='average_los_brightness',
-                                           frequency=freq,
-                                           units=u.K/u.kpc,
-                                           data_col='emissivity',
+                                           frequency=observing_frequency,
+                                           units=dunit,
+                                           data_col='brightness',
                                            err_col='err',
                                            lat_col='lat',
                                            lon_col='lon')
 mea = img.observables.Measurements(fake_dset)
 
 
+# Setup coordinate grid
+box_size       = 15*u.kpc
+cartesian_grid = img.fields.UniformGrid(box=[[-box_size, box_size],
+                                             [-box_size, box_size],
+                                             [-box_size, box_size]],
+                                             resolution = [3,3,3])
 
 # Cosmic-Ray Electron Model
-constCRE = fields.ConstantCosmicRayElectrons(grid      =cartesian_grid,
-                                             parameters={'density':1.0e37/7.01499*u.cm**-3,
-                                                         'spectral_index':-3})
-credata = constCRE.get_data()
+constCRE = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
+                                             parameters={'density':1.0e-7*u.cm**-3,'spectral_index':-3})
+
 
 # Magnetic Field Model
 Bfield = fields.ConstantMagneticField(
     grid = cartesian_grid,
     ensemble_size= 1,
-    parameters={'Bx': 1*u.microgauss,
+    parameters={'Bx': 6*u.microgauss,
                 'By': 0*u.microgauss,
                 'Bz': 0*u.microgauss})
 
 
-#%% Call the simulator
-
-vobs     = 90*MHz
-#observer = np.array([-15,0,0])*u.kpc # observer is defined where lon and lat are too
-
+# Simulator configuration
+observer = np.array([0,0,0])*u.kpc
+hIIdist  = (box_size-2*u.kpc)*np.random.rand(Ndata) + 1*u.kpc # uniform between [1, max-1] kpc
+dist_err = hIIdist/10
+NF = 20 # number of front los measurements
+F  = np.full(shape=(NF), fill_value='F', dtype=str)
+B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
+FB = np.hstack((F,B))
+np.random.shuffle(FB)
 config = {'grid'    :cartesian_grid,
           'observer':observer,
-          'dist':np.array([30,15,10,10])*u.kpc,
-          'e_dist':np.ones(Npoints)*0.3*u.kpc,
-          'lat':fake_lat,
-          'lon':fake_lon,
-          'FB':['F','F','B','B']}
-          
-#print(mea)
+          'dist':hIIdist,
+          'e_dist':dist_err,
+          'lat':lat,
+          'lon':lon,
+          'FB':FB}
+
 test_sim   = SpectralSynchrotronEmissivitySimulator(mea, config) # create instance
-simulation = test_sim([constCRE, Bfield]) # call instance again with the required field types
+simulation = test_sim([constCRE, Bfield])
+
+key = ('average_los_brightness', 0.09000000000000001, 'tab', None)
+#for key in simulation.keys():
+#    print(dir(simulation[key]))
+#    print(simulation[key].data[0])
+
+sim_brightness = simulation[key].data[0] * simulation[key].unit
 
 
+#%% Setup full pipeline
 
-print(simulation)
+# Setup (simulated) dataset
+sim_data = {'brightness':sim_brightness,'err':sim_brightness/10,'lat':lat,'lon':lon}
+sim_dset = img.observables.TabularDataset(sim_data,
+                                           name='average_los_brightness',
+                                           frequency=observing_frequency,
+                                           units=dunit,
+                                           data_col='brightness',
+                                           err_col='err',
+                                           lat_col='lat',
+                                           lon_col='lon')
+sim_mea = img.observables.Measurements(sim_dset)
+
+# Setup simulator
+los_simulator = SpectralSynchrotronEmissivitySimulator(sim_mea, config) # create instance
+
+# Initialize likelihood
+likelihood = img.likelihoods.EnsembleLikelihood(sim_mea)
+
+# Setup field factory
+constCRE = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
+                                             parameters={'density':1.0e-7*u.cm**-3,'spectral_index':-3})
+CRE_factory = img.fields.FieldFactory(field_class = constCRE) # no active paramters
+
+Bfield = fields.ConstantMagneticField(grid=cartesian_grid, ensemble_size=1,
+    parameters={'Bx': 0*u.microgauss,
+                'By': 0*u.microgauss,
+                'Bz': 0*u.microgauss})
+B_factory = img.fields.FieldFactory(field_class=Bfield)
+B_factory.active_parameters = ('Bx',)
+#print(dir(B_factory))
+#print(B_factory.default_parameters)
+#print(B_factory.active_parameters)
+B_factory.priors = {'Bx':  img.priors.FlatPrior(xmin=0., xmax=10.)} # what units?
+#print(B_factory.priors)
+
+factory_list = [CRE_factory, B_factory]
 
 
+# Setup pipeline
+pipeline = img.pipelines.MultinestPipeline( simulator     = los_simulator,
+                                            run_directory = rundir,
+                                            factory_list  = factory_list,
+                                            likelihood    = likelihood,
+                                            )
+pipeline.sampling_controllers = {'evidence_tolerance': 0.5, 'n_live_points': 200}
 
-
-
-
-
-
-
-
-
-
-
+# Run pipeline!
+#results = pipeline()
 
 
 
