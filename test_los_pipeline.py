@@ -23,12 +23,49 @@ ugauss_B = 1e-6 * gauss_B
 
 # Script dependancies
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
 
 # Run directory for pipeline
-rundir = 'runs/mockdata'
+rundir  = 'runs/mockdata'
+figpath = 'figures/'
 
 
 print('\nRunning test_lost_pipeline.py\n\n')
+
+#%% Diagnostic and plotting functions
+
+def plot_LOScube(axes, starts, ends, fname):
+    print("Plotting and saving LOS-cube setup as: "+fname)    
+    
+    # The integration domian has to have integer limits in order to plot correctly!
+    axes = axes.astype(int)
+    unit = starts.unit
+    
+    # Open canvas
+    fig = plt.figure()
+    ax  = fig.add_subplot(111, projection='3d')
+        
+    # Setup cube
+    cube      = np.ones(tuple(axes), dtype=bool)
+    alpha     = 0.3
+    colors    = np.empty(list(axes)+[4], dtype=np.float32)
+    colors[:] = [0,0,1,alpha]
+    ax.voxels(cube, facecolors=colors)
+
+    # Setup lines and start/end points
+    segm = []
+    [segm.append(np.vstack((s,e))) for s,e in zip(starts/unit,ends/unit)]
+    ax.scatter(starts[:,0],starts[:,1],starts[:,2])
+    ax.scatter(ends[:,0],ends[:,1],ends[:,2])
+    ax.add_collection3d(Line3DCollection(segments=segm,colors='k'))
+
+    # Save figure
+    plt.savefig(figpath+fname)
+    plt.close('all') # not sure if need but just to be sure
+
+
 
 #%% Define the Simulator class
 
@@ -50,7 +87,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
     REQUIRED_FIELD_TYPES = ['magnetic_field', 'cosmic_ray_electron_density']
     ALLOWED_GRID_TYPES   = ['cartesian']
     
-    def __init__(self, measurements, sim_config={'grid':None,'observer':None,'dist':None,'e_dist':None,'lat':None,'lon':None,'FB':None}):
+    def __init__(self,measurements,sim_config={'grid':None,'observer':None,'dist':None,'e_dist':None,'lat':None,'lon':None,'FB':None},plotting=False):
         
         print("Initializing SynchtrotronEmissivitySimulator")
         # Send the Measurements to the parent class
@@ -120,6 +157,9 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
 
         start_points[behind] = end_points[behind] + np.reshape(lambdas[behind], newshape=(np.size(behind),1))*deltas[behind]
         
+        if plotting:
+            plot_LOScube(axes=box, starts=start_points, ends=end_points, fname='losbox_testsim.pdf')        
+        
         self.los_distances = np.linalg.norm(end_points-start_points, axis=1)
    
         nstarts = self._make_nifty_points(start_points)
@@ -183,7 +223,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         # Need to convert to K/kpc units. Note that self.los_distances may not be correct when using e_dist for domain
         HII_LOSbrightness = c**2/(2*kb*self.observing_frequency**2)*HII_LOSemissivities/self.los_distances
 
-        print(HII_LOSbrightness[:5].to(u.K/u.kpc))
+        print(HII_LOSbrightness.to(u.K/u.kpc),np.min(HII_LOSbrightness.to(u.K/u.kpc)))
         return HII_LOSbrightness # whatever is returned has to have the same shape as the object in measurements
 
 
@@ -198,7 +238,7 @@ dunit = u.K/u.kpc
 T     = np.zeros(Ndata)*dunit # placeholder
 T_err = np.zeros(Ndata)*dunit# placeholder
 lat   = 90*np.linspace(-1,1,Ndata)*u.deg
-lon   = 360*np.linspace(0,360,Ndata)*u.deg
+lon   = 360*np.linspace(0,1,Ndata)*u.deg*360
 
 fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
 fake_dset = img.observables.TabularDataset(fake_data,
@@ -227,7 +267,6 @@ constCRE = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
 # Magnetic Field Model
 Bfield = fields.ConstantMagneticField(
     grid = cartesian_grid,
-    ensemble_size= 1,
     parameters={'Bx': 6*u.microgauss,
                 'By': 0*u.microgauss,
                 'Bz': 0*u.microgauss})
@@ -239,11 +278,11 @@ hIIdist  = (box_size-2*u.kpc)*np.random.rand(Ndata) + 1*u.kpc # uniform between 
 #print("\nSimulation domain: \n", cartesian_grid.box)
 #print("Min-max of hIIdist: ", np.min(hIIdist), np.max(hIIdist))
 dist_err = hIIdist/10
-NF = 20 # number of front los measurements
+NF = int(0.2*Ndata) # 20% of all measurements
 F  = np.full(shape=(NF), fill_value='F', dtype=str)
 B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
 FB = np.hstack((F,B))
-#np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
+np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
 
 
 config = {'grid'    :cartesian_grid,
@@ -254,7 +293,7 @@ config = {'grid'    :cartesian_grid,
           'lon':lon,
           'FB':FB}
 
-test_sim   = SpectralSynchrotronEmissivitySimulator(mea, config) # create instance
+test_sim   = SpectralSynchrotronEmissivitySimulator(mea, config, plotting=False) # create instance
 simulation = test_sim([constCRE, Bfield])
 
 # Retreive simulated data
@@ -286,24 +325,26 @@ sim_mea = img.observables.Measurements(sim_dset)
 los_simulator = SpectralSynchrotronEmissivitySimulator(sim_mea, config) # create instance
 
 # Initialize likelihood
-likelihood = img.likelihoods.EnsembleLikelihood(sim_mea)
+likelihood = img.likelihoods.SimpleLikelihood(sim_mea)
+
+print("Running likelihood: \n")
+print(likelihood(simulation))
 
 # Setup field factories
 constCRE = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
                                              parameters={'density':1.0e-7*u.cm**-3,'spectral_index':-3})
-CRE_factory = img.fields.FieldFactory(field_class = constCRE) # no active paramters
+CRE_factory = img.fields.FieldFactory(field_class = constCRE, grid=cartesian_grid) # no active paramters
+#print(dir(CRE_factory))
 
 Bfield = fields.ConstantMagneticField(
     grid          = cartesian_grid,
-    ensemble_size = 1,
     parameters    = {'Bx': 0*u.microgauss,'By': 0*u.microgauss,'Bz': 0*u.microgauss})
-B_factory                   = img.fields.FieldFactory(field_class=Bfield)
+B_factory                   = img.fields.FieldFactory(field_class=Bfield, grid=cartesian_grid)
 B_factory.active_parameters = ('Bx',)
-B_factory.priors            = {'Bx':  img.priors.FlatPrior(xmin=0., xmax=10.)} # what units?
+B_factory.priors            = {'Bx':  img.priors.FlatPrior(xmin=0.*u.microgauss, xmax=10.*u.microgauss)} # what units?
 
 
 factory_list = [CRE_factory, B_factory]
-
 
 
 
@@ -320,10 +361,4 @@ pipeline.sampling_controllers = {'evidence_tolerance': 0.1, 'n_live_points': 200
 results = pipeline()
 
 print(dir(results))
-
-
-
-
-
-
 
