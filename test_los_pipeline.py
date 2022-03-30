@@ -27,6 +27,9 @@ import matplotlib.pyplot as plt
 # Run directory for pipeline
 rundir = 'runs/mockdata'
 
+
+print('\nRunning test_lost_pipeline.py\n\n')
+
 #%% Define the Simulator class
 
 class SpectralSynchrotronEmissivitySimulator(Simulator):
@@ -82,6 +85,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         zmax = (cbox[2][1]-cbox[2][0])/unit       
         box  = np.array([xmax,ymax,zmax])
         grid_distances = tuple([b/r for b,r in zip(box, grid.resolution)])
+        #print("Domain paramters: ", grid.resolution, grid_distances)
         self.domain = ift.makeDomain(ift.RGSpace(grid.resolution, grid_distances)) # need this later for the los integration 
     
         # Get lines of sight from data
@@ -116,13 +120,15 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
 
         start_points[behind] = end_points[behind] + np.reshape(lambdas[behind], newshape=(np.size(behind),1))*deltas[behind]
         
-        
         self.los_distances = np.linalg.norm(end_points-start_points, axis=1)
    
-        
         nstarts = self._make_nifty_points(start_points)
         nends   = self._make_nifty_points(end_points)
-
+        #print(translated_observer)
+        #print(np.sum(self.los_distances > xmax/2*unit))
+        #print(start_points[self.los_distances > xmax/2*unit])
+        #print(end_points[self.los_distances > xmax/2*unit])
+        #print("Min-max of losdist: ", np.min(self.los_distances), np.max(self.los_distances))
         self.response = ift.LOSResponse(self.domain, nstarts, nends) # domain doesnt know about its units but starts/ends do?
 
     def _make_nifty_points(self, points, dim=3):
@@ -177,12 +183,13 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         # Need to convert to K/kpc units. Note that self.los_distances may not be correct when using e_dist for domain
         HII_LOSbrightness = c**2/(2*kb*self.observing_frequency**2)*HII_LOSemissivities/self.los_distances
 
-        
+        print(HII_LOSbrightness[:5].to(u.K/u.kpc))
         return HII_LOSbrightness # whatever is returned has to have the same shape as the object in measurements
 
 
 #%% Make a simulated dataset with known model paramters
 
+print("Producing simulated dataset ...\n")
 
 # Mock dataset
 Ndata = 100
@@ -210,7 +217,7 @@ box_size       = 15*u.kpc
 cartesian_grid = img.fields.UniformGrid(box=[[-box_size, box_size],
                                              [-box_size, box_size],
                                              [-box_size, box_size]],
-                                             resolution = [3,3,3])
+                                             resolution = [31,31,31])
 
 # Cosmic-Ray Electron Model
 constCRE = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
@@ -229,12 +236,16 @@ Bfield = fields.ConstantMagneticField(
 # Simulator configuration
 observer = np.array([0,0,0])*u.kpc
 hIIdist  = (box_size-2*u.kpc)*np.random.rand(Ndata) + 1*u.kpc # uniform between [1, max-1] kpc
+#print("\nSimulation domain: \n", cartesian_grid.box)
+#print("Min-max of hIIdist: ", np.min(hIIdist), np.max(hIIdist))
 dist_err = hIIdist/10
 NF = 20 # number of front los measurements
 F  = np.full(shape=(NF), fill_value='F', dtype=str)
 B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
 FB = np.hstack((F,B))
-np.random.shuffle(FB)
+#np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
+
+
 config = {'grid'    :cartesian_grid,
           'observer':observer,
           'dist':hIIdist,
@@ -246,12 +257,15 @@ config = {'grid'    :cartesian_grid,
 test_sim   = SpectralSynchrotronEmissivitySimulator(mea, config) # create instance
 simulation = test_sim([constCRE, Bfield])
 
+# Retreive simulated data
 key = ('average_los_brightness', 0.09000000000000001, 'tab', None)
-#for key in simulation.keys():
-#    print(dir(simulation[key]))
-#    print(simulation[key].data[0])
-
 sim_brightness = simulation[key].data[0] * simulation[key].unit
+
+# Add noise to the data proportional to T_err
+sim_brightness += np.random.normal(loc=0, scale=0.01*sim_brightness, size=Ndata)*simulation[key].unit
+
+
+
 
 
 #%% Setup full pipeline
@@ -274,38 +288,38 @@ los_simulator = SpectralSynchrotronEmissivitySimulator(sim_mea, config) # create
 # Initialize likelihood
 likelihood = img.likelihoods.EnsembleLikelihood(sim_mea)
 
-# Setup field factory
+# Setup field factories
 constCRE = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
                                              parameters={'density':1.0e-7*u.cm**-3,'spectral_index':-3})
 CRE_factory = img.fields.FieldFactory(field_class = constCRE) # no active paramters
 
-Bfield = fields.ConstantMagneticField(grid=cartesian_grid, ensemble_size=1,
-    parameters={'Bx': 0*u.microgauss,
-                'By': 0*u.microgauss,
-                'Bz': 0*u.microgauss})
-B_factory = img.fields.FieldFactory(field_class=Bfield)
+Bfield = fields.ConstantMagneticField(
+    grid          = cartesian_grid,
+    ensemble_size = 1,
+    parameters    = {'Bx': 0*u.microgauss,'By': 0*u.microgauss,'Bz': 0*u.microgauss})
+B_factory                   = img.fields.FieldFactory(field_class=Bfield)
 B_factory.active_parameters = ('Bx',)
-#print(dir(B_factory))
-#print(B_factory.default_parameters)
-#print(B_factory.active_parameters)
-B_factory.priors = {'Bx':  img.priors.FlatPrior(xmin=0., xmax=10.)} # what units?
-#print(B_factory.priors)
+B_factory.priors            = {'Bx':  img.priors.FlatPrior(xmin=0., xmax=10.)} # what units?
+
 
 factory_list = [CRE_factory, B_factory]
 
 
+
+
 # Setup pipeline
+print("Starting pipeline ... \n")
 pipeline = img.pipelines.MultinestPipeline( simulator     = los_simulator,
                                             run_directory = rundir,
                                             factory_list  = factory_list,
                                             likelihood    = likelihood,
                                             )
-pipeline.sampling_controllers = {'evidence_tolerance': 0.5, 'n_live_points': 200}
+pipeline.sampling_controllers = {'evidence_tolerance': 0.1, 'n_live_points': 200}
 
 # Run pipeline!
-#results = pipeline()
+results = pipeline()
 
-
+print(dir(results))
 
 
 
