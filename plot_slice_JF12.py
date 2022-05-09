@@ -85,12 +85,16 @@ def project_to_perpendicular(vectorfield, unitvector_grid):
 cartesian_grid = img.fields.UniformGrid(box=[[-15*u.kpc, 15*u.kpc],
                                              [-15*u.kpc, 15*u.kpc],
                                              [-5*u.kpc, 5*u.kpc]],
-                                             resolution = [31,31,31])
+                                             resolution = [50,50,50])
 # Get field data
 Bfield = WrappedJF12(grid=cartesian_grid) # default parameters
-Bdata = Bfield.get_data()
+Bdata  = Bfield.get_data()
+print(Bdata)
+print(Bdata[Bdata/Bdata.unit > 1e-12])
+print(np.mean(Bdata))
+#print(np.sum(np.isnan(Bdata)))
 #Bdata[:,:,:,2] = np.zeros(cartesian_grid.resolution) # set field in z-direction to zero
-azimuth  = get_unit_vectors(observer=np.array([-8.5,0,0])*u.kpc, grid=cartesian_grid)
+azimuth  = get_unit_vectors(observer=np.array([0,0,0])*u.kpc, grid=cartesian_grid)
 Bazimuth = project_to_perpendicular(vectorfield=Bdata, unitvector_grid=azimuth)
 
 
@@ -105,7 +109,8 @@ plt.ylabel('y kpc')
 plt.xlabel('x kpc')
 plt.colorbar()
 
-plt.savefig(figpath+'JF12_horizontalslice_Earthobserver.png')
+print("Saving figure")
+plt.savefig(figpath+'JF12_horizontalsliceGalCentr.png')
 plt.close('all')
 
 

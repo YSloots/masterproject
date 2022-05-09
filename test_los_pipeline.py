@@ -8,6 +8,7 @@ import nifty7 as ift
 
 from imagine.fields.hamx import BregLSA, BregLSAFactory
 from imagine.fields.hamx import CREAna, CREAnaFactory
+from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12, WrappedJF12Factory
 
 import astropy.units as u
 from astropy.coordinates import spherical_to_cartesian
@@ -116,11 +117,11 @@ def plotCubeAt(pos, alpha, ax=None):
 
 def plotMatrix(ax, x, y, z, data):
     normdata = data/np.max(data)
-    alphadat = normdata.value/100 # make alpha difference more pronounced
+    alphadat = normdata.value/5 # make alpha difference more pronounced
     for i, xi in enumerate(x):
             for j, yi in enumerate(y):
                 for k, zi, in enumerate(z):
-                    if alphadat[i,j,k] > 1e-3:
+                    if alphadat[i,j,k] > 1e-4:
                         plotCubeAt(pos=(xi, yi, zi), alpha=alphadat[i,j,k],  ax=ax)         
 
 def plot_LOScubeV2(grid,data,starts,ends,fname):
@@ -281,7 +282,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         #print(start_points[self.los_distances > xmax/2*unit])
         #print(end_points[self.los_distances > xmax/2*unit])
         #print("Min-max of losdist: ", np.min(self.los_distances), np.max(self.los_distances))
-        self.response = ift.LOSResponse(self.domain, nstarts, nends) # domain doesnt know about its units but starts/ends do?
+        self.response = ift.LOSResponse(self.domain, nstarts, nends, sigmas=e_hIIdist, truncation=3.) # domain doesnt know about its units but starts/ends do?
 
         # Just needed for testing can remove these in later version
         self.start = start_points
@@ -339,7 +340,13 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         alpha     = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
         ncre_grid = self.fields['cosmic_ray_electron_density']  # in units cm^-3
         #B_grid    = self.fields['magnetic_field']/u.microgauss * ugauss_B # fixing astropy cgs units
-        B_grid    = self.fields['magnetic_field'] # fixing is now done inside emissivity calculation        
+        B_grid    = self.fields['magnetic_field'] # fixing is now done inside emissivity calculation
+        #print(np.max(B_grid))
+        #print("From testlos.py ", np.sum(np.isnan(B_grid)))
+        #print("nans at: ", np.argwhere(np.isnan(B_grid)==True))
+        #B_grid[np.isnan(B_grid)] = 0 # JF12 spits out nans
+        #print(np.max(B_grid))
+        
         
         # Project to perpendicular component along line of sight
         Bperp_amplitude_grid = self._project_to_perpendicular(B_grid)        
@@ -347,7 +354,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         # Calculate grid of emissivity values
         emissivity_grid = self._spectral_total_emissivity(Bperp_amplitude_grid, ncre_grid)
         #plot_LOScube(axes=self.grid.resolution,starts=self.start,ends=self.end,fname='losbox_emissivity_IMGModels.pdf')        
-        #plot_LOScubeV2(grid=self.grid,data=emissivity_grid,starts=self.start,ends=self.end,fname='losbox2_emissivity_cutoffBestpdf.pdf')
+        #plot_LOScubeV2(grid=self.grid,data=emissivity_grid,starts=self.start,ends=self.end,fname='losbox2_JF12CRE_c5e4V2.pdf')
         
         # Do the los integration on the domain defined in init with the new emissivity grid
         HII_LOSemissivities = self.response(ift.Field(self.domain, emissivity_grid)).val_rw()
@@ -362,7 +369,7 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
 #%% Make a simulated dataset with known model paramters
 
 
-"""
+
 print("Producing simple simulated dataset ...\n")
 
 # Mock dataset
@@ -392,7 +399,7 @@ box_size       = 15*u.kpc
 cartesian_grid = img.fields.UniformGrid(box=[[-box_size, box_size],
                                              [-box_size, box_size],
                                              [-box_size, box_size]],
-                                             resolution = [31,31,31])
+                                             resolution = [30,30,30])
 
 # Cosmic-Ray Electron Model
 cre = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
@@ -405,7 +412,11 @@ Bfield = fields.ConstantMagneticField(
     parameters={'Bx': 6*u.microgauss,
                 'By': 0*u.microgauss,
                 'Bz': 0*u.microgauss})
-
+Bfield = WrappedJF12(grid=cartesian_grid)    
+Bdata  = Bfield.get_data()
+print(Bdata)
+print(Bdata[Bdata/Bdata.unit > 1e-12])
+print(np.mean(Bdata))
 
 observer = np.array([0,0,0])*u.kpc
 hIIdist  = (box_size-2*u.kpc)*np.random.rand(Ndata) + 1*u.kpc # uniform between [1, max-1] kpc
@@ -426,11 +437,12 @@ config = {'grid'    :cartesian_grid,
           'lat':lat,
           'lon':lon,
           'FB':FB}
-"""
+
+
 
 #%% More complicated models
 
-
+"""
 def randrange(minvalue,maxvalue,Nvalues):
     return (maxvalue-minvalue)*np.random.rand(Nvalues)+minvalue
 
@@ -445,10 +457,10 @@ zmax =  2*u.kpc
 cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
                                              [-ymax, ymax],
                                              [-zmax, zmax]],
-                                             resolution = [31,31,31])
+                                             resolution = [30,30,30]) # skipping x=y=0
 
 # Mock dataset
-Ndata = 50
+Ndata = 20
 observing_frequency = 90*MHz
 dunit = u.K/u.kpc
 T     = np.zeros(Ndata)*dunit # placeholder
@@ -459,7 +471,7 @@ z = randrange(-0.9*zmax,0.9*zmax,Ndata)
 hIIdist, lat, lon = cartesian_to_spherical(x+8.5*u.kpc,y,z)
 #hIIdist  = np.sqrt((x+8.5)**2+y**2+z**2)*u.kpc
 observer = np.array([-8.5,0,0])*u.kpc
-dist_err = hIIdist/10
+dist_err = hIIdist/5
 
 # Define front or behind measurements
 NF = int(0.2*Ndata) # 20% of all measurements
@@ -491,7 +503,7 @@ mea = img.observables.Measurements(fake_dset)
 
 
 
-# Fieldsetup:
+# Fieldsetup
 cre = fields.PowerlawCosmicRayElectrons(grid=cartesian_grid,
                                         parameters = {'scale_radius':10*u.kpc,
                                                      'scale_height':1*u.kpc,
@@ -500,13 +512,8 @@ cre = fields.PowerlawCosmicRayElectrons(grid=cartesian_grid,
 
 
 # Magnetic Field Model
-Bfield = fields.ConstantMagneticField(
-    grid = cartesian_grid,
-    parameters={'Bx': 6*u.microgauss,
-                'By': 0*u.microgauss,
-                'Bz': 0*u.microgauss})
-
-
+Bfield = WrappedJF12(grid=cartesian_grid)
+"""
 
 #%% Produce simulated data
 
@@ -520,7 +527,7 @@ sim_brightness = simulation[key].data[0] * simulation[key].unit
 # Add noise to the data proportional to T_err
 sim_brightness += np.random.normal(loc=0, scale=0.01*sim_brightness, size=Ndata)*simulation[key].unit
 
-
+print("Simulated emissivities: \n", sim_brightness)
 
 
 #%% Setup full pipeline
@@ -543,24 +550,33 @@ los_simulator = SpectralSynchrotronEmissivitySimulator(sim_mea, config) # create
 # Initialize likelihood
 likelihood = img.likelihoods.SimpleLikelihood(sim_mea)
 
-#print("Running likelihood: \n")
-#print(likelihood(simulation))
 
-# Setup field factories
-constCRE = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
-                                             parameters={'density':1.0e-7*u.cm**-3,'spectral_index':0})
-CRE_factory = img.fields.FieldFactory(field_class = constCRE, grid=cartesian_grid) # no active paramters
+
+# Setup field factories (instances cre and Bfield have to be defined in previous section)
+
+# Simple CRE exponential profile
+CRE_factory = img.fields.FieldFactory(field_class = cre, grid=cartesian_grid) # no active paramters
 CRE_factory.active_parameters=('spectral_index',)
 CRE_factory.priors = {'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
 
+# Simple constant Bfield
+
 Bfield = fields.ConstantMagneticField(
-    grid          = cartesian_grid,
-    parameters    = {'Bx': 6*u.microgauss,'By': 0*u.microgauss,'Bz': 0*u.microgauss})
-B_factory = img.fields.FieldFactory(field_class=Bfield, grid=cartesian_grid)
-B_factory.active_parameters = ('Bx',)
-B_factory.priors = {'Bx':img.priors.FlatPrior(xmin=0.*u.microgauss, xmax=10.*u.microgauss)} # what units?
+    grid = cartesian_grid,
+    parameters={'Bx': 6*u.microgauss,
+                'By': 0*u.microgauss,
+                'Bz': 0*u.microgauss})
+B_factory = img.fields.FieldFactory(field_class = Bfield, grid=cartesian_grid)
+
+# Or JF12 factory
+#B_factory = img.fields.FieldFactory(field_class = Bfield, grid=cartesian_grid)
+
 factory_list = [CRE_factory, B_factory]
 
+
+
+# IF we want to do a JF12 pipeline we have to fix the nans problem first!!!
+# -> we can use even resolution grid to avoid points on z-axis for now
 
 """
 # Setup pipeline
@@ -576,4 +592,23 @@ pipeline.sampling_controllers = {'evidence_tolerance': 0.5, 'n_live_points': 200
 results = pipeline()
 
 print(dir(results))
+
 """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
