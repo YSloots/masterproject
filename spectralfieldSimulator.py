@@ -310,11 +310,17 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         e     = (cons.e).gauss/(cons.e).gauss.unit
         me    = cons.m_e.cgs/cons.m_e.cgs.unit
         c     = cons.c.cgs/cons.c.cgs.unit
-        # Check argument units and remove them for the calculation
-        alpha = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
+        # Check argument units and remove them for the calculation        
         vobs  = self.observing_frequency.to(1/u.s)*u.s
         ncre  = ncre.to(u.cm**-3)*u.cm**3
         Bper  = Bper.to(u.G)/u.G
+        # Handle two spectral index cases:
+        try: # alpha is a constant spectral index globally 
+            alpha = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
+        except: pass
+        try: # alpha is an instance of a 3D scalar field
+            alpha = self.fields['cosmic_ray_electron_spectral_index']
+        except: pass
         # Calculate emissivity grid
         fraction1 = (np.sqrt(3)*e**3*ncre/(8*np.pi*me*c**2))
         fraction2 = (4*np.pi*vobs*me*c/(3*e))
@@ -339,7 +345,6 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         """Calculate a 3D box with synchrotron emissivities"""        
         
         # Acces field data
-        alpha     = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
         ncre_grid = self.fields['cosmic_ray_electron_density']  # in units cm^-3
         #B_grid    = self.fields['magnetic_field']/u.microgauss * ugauss_B # fixing astropy cgs units
         B_grid    = self.fields['magnetic_field'] # fixing is now done inside emissivity calculation
@@ -407,6 +412,15 @@ cartesian_grid = img.fields.UniformGrid(box=[[-box_size, box_size],
 cre = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
                                         parameters={'density':1.0e-7*u.cm**-3,'spectral_index':-3.0})
 
+cre_num = fields.CRENumberDensity(grid= cartesian_grid,
+                                  parameters={'scale_radius':10*u.kpc,
+                                              'scale_height':1*u.kpc,
+                                              'central_density':1e-5*u.cm**-3})
+cre_alpha = fields.SpectralIndexLinearVerticalProfile(grid=cartesian_grid,
+                                                     parameters={'soft_index':-3, 'hard_index':-3, 'slope':-0*u.kpc**-1})
+
+print(cre_num.get_data())
+print(cre_alpha.get_data())
 
 # Magnetic Field Model
 Bfield = fields.ConstantMagneticField(
@@ -437,86 +451,11 @@ config = {'grid'    :cartesian_grid,
           'FB':FB}
 
 
-
-#%% More complicated models
-
-"""
-def randrange(minvalue,maxvalue,Nvalues):
-    return (maxvalue-minvalue)*np.random.rand(Nvalues)+minvalue
-
-
-print("Producing more realistic simulated dataset ...\n")
-
-
-# Less redundancy in coordinate grid
-xmax = 15*u.kpc
-ymax = 15*u.kpc
-zmax =  2*u.kpc
-cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
-                                             [-ymax, ymax],
-                                             [-zmax, zmax]],
-                                             resolution = [30,30,30]) # skipping x=y=0
-
-# Mock dataset
-Ndata = 20
-observing_frequency = 90*MHz
-dunit = u.K/u.kpc
-T     = np.zeros(Ndata)*dunit # placeholder
-T_err = np.zeros(Ndata)*dunit # placeholder
-x = randrange(-0.9*xmax,0.9*xmax,Ndata)
-y = randrange(-0.9*ymax,0.9*ymax,Ndata)
-z = randrange(-0.9*zmax,0.9*zmax,Ndata)
-hIIdist, lat, lon = cartesian_to_spherical(x+8.5*u.kpc,y,z)
-#hIIdist  = np.sqrt((x+8.5)**2+y**2+z**2)*u.kpc
-observer = np.array([-8.5,0,0])*u.kpc
-dist_err = hIIdist/5
-
-# Define front or behind measurements
-NF = int(0.2*Ndata) # 20% of all measurements
-F  = np.full(shape=(NF), fill_value='F', dtype=str)
-B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
-FB = np.hstack((F,B))
-np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
-
-# Save the full simulation configuration
-config = {'grid'    :cartesian_grid,
-          'observer':observer,
-          'dist':hIIdist,
-          'e_dist':dist_err,
-          'lat':lat,
-          'lon':lon,
-          'FB':FB}
-
-# Save placeholder dataset
-fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
-fake_dset = img.observables.TabularDataset(fake_data,
-                                           name='average_los_brightness',
-                                           frequency=observing_frequency,
-                                           units=dunit,
-                                           data_col='brightness',
-                                           err_col='err',
-                                           lat_col='lat',
-                                           lon_col='lon')
-mea = img.observables.Measurements(fake_dset)
-
-
-
-# Fieldsetup
-cre = fields.PowerlawCosmicRayElectrons(grid=cartesian_grid,
-                                        parameters = {'scale_radius':10*u.kpc,
-                                                     'scale_height':1*u.kpc,
-                                                     'central_density':1e-5*u.cm**-3,
-                                                     'spectral_index':-3})
-
-
-# Magnetic Field Model
-Bfield = WrappedJF12(grid=cartesian_grid)
-"""
-
 #%% Produce simulated data
 
 test_sim   = SpectralSynchrotronEmissivitySimulator(mea, config, plotting=False) # create instance
-simulation = test_sim([cre, Bfield])
+simulation = test_sim([cre_num,cre_alpha,Bfield])
+#simulation = test_sim([cre,Bfield])
 
 # Retreive simulated data
 key = ('average_los_brightness', 0.09000000000000001, 'tab', None)
@@ -529,6 +468,8 @@ print("Simulated emissivities: \n", sim_brightness)
 
 
 #%% Setup full pipeline
+
+"""
 
 # Setup (simulated) dataset
 sim_data = {'brightness':sim_brightness,'err':sim_brightness/10,'lat':lat,'lon':lon}
@@ -560,7 +501,7 @@ B_factory = img.fields.FieldFactory(field_class = Bfield, grid=cartesian_grid)
 
 factory_list = [CRE_factory, B_factory]
 
-
+"""
 
 # IF we want to do a JF12 pipeline we have to fix the nans problem first!!!
 # -> we can use even resolution grid to avoid points on z-axis for now

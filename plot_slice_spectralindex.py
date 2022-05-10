@@ -1,8 +1,7 @@
 import imagine as img
 import numpy as np
 import astropy.units as u
-from imagine.fields.hamx.breg_jf12 import BregJF12
-from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12
+from imagine import fields
 import matplotlib.pyplot as plt
 from astropy.coordinates import cartesian_to_spherical
 
@@ -55,63 +54,37 @@ def plot_slices(data, grid, fname=' '):
     fig.savefig(figpath+fname)
     plt.close('all')
     
-#%%
-
-def get_unit_vectors(observer, grid):
-        unit = observer.unit 
-        unitvectors = []
-        for x,y,z in zip(grid.x.ravel()/unit,grid.y.ravel()/unit,grid.z.ravel()/unit):
-            v = np.array([x,y,z])-observer/unit
-            normv = np.linalg.norm(v)
-            if normv == 0: # special case where the observer is inside one of the grid points
-                unitvectors.append(v)
-            else:
-                unitvectors.append(v/normv)
-        # Save unitvector grid as class attribute
-        return np.reshape(unitvectors, tuple(grid.resolution)+(3,))
-
-def project_to_perpendicular(vectorfield, unitvector_grid):
-    v_parallel      = np.zeros(np.shape(vectorfield)) * vectorfield.unit
-    amplitudes      = np.sum(vectorfield * unitvector_grid, axis=3)
-    v_parallel[:,:,:,0]  = amplitudes * unitvector_grid[:,:,:,0]
-    v_parallel[:,:,:,1]  = amplitudes * unitvector_grid[:,:,:,1]
-    v_parallel[:,:,:,2]  = amplitudes * unitvector_grid[:,:,:,2]
-    v_perpendicular      = vectorfield - v_parallel
-    v_perp_amplitude     = np.sqrt(np.sum(v_perpendicular*v_perpendicular,axis=3))
-    return v_perp_amplitude
-
 # Setup coordinate grid
 cartesian_grid = img.fields.UniformGrid(box=[[-15*u.kpc, 15*u.kpc],
                                              [-15*u.kpc, 15*u.kpc],
-                                             [-5*u.kpc, 5*u.kpc]],
-                                             resolution = [5,5,5])
-# Get field data
-Bfield = WrappedJF12(grid=cartesian_grid) # default parameters
-Bdata  = Bfield.get_data()
-print(Bdata)
-print(Bdata[np.abs(Bdata/Bdata.unit) > 1e-12])
-print(np.mean(Bdata))
-#print(np.sum(np.isnan(Bdata)))
-#Bdata[:,:,:,2] = np.zeros(cartesian_grid.resolution) # set field in z-direction to zero
-azimuth  = get_unit_vectors(observer=np.array([0,0,0])*u.kpc, grid=cartesian_grid)
-Bazimuth = project_to_perpendicular(vectorfield=Bdata, unitvector_grid=azimuth)
+                                             [-2*u.kpc, 2*u.kpc]],
+                                             resolution = [30,30,30])
+# Setup field
+cre_alpha = fields.SpectralIndexLinearVerticalProfile(
+    grid = cartesian_grid,
+    parameters = {'soft_index':-4, 'hard_index':-2.5, 'slope':1*u.kpc**-1})
+alpha_data = cre_alpha.get_data()
+#print(alpha_data[:,:,0])
+#print(alpha_data[:,:,1])
+#print(alpha_data[:,:,2])
+#print(alpha_data[:,:,3])
+#print(alpha_data)
 
-"""
+
 # Make figure
 x = cartesian_grid.x[:,0,0]/u.kpc
 y = cartesian_grid.y[0,:,0]/u.kpc
 z = cartesian_grid.z[0,0,:]/u.kpc
-hor_slice = Bazimuth[:,:,int(len(z)/2)]/Bazimuth.unit
-plt.contourf(x,y,hor_slice,10,cmap='Blues')
+ver_slice = alpha_data[:,int(len(y)/2),:]/alpha_data.unit
+plt.contourf(x,y,ver_slice,10,cmap='Blues')
 plt.title('JF12 magnetic field perpendicular LOS component')
 plt.ylabel('y kpc')
 plt.xlabel('x kpc')
 plt.colorbar()
 
 print("Saving figure")
-plt.savefig(figpath+'JF12_horizontalsliceGalCentr.png')
+plt.savefig(figpath+'spectralindexprofile.png')
 plt.close('all')
-"""
 
 
 
