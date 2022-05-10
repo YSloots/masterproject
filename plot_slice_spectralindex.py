@@ -76,9 +76,9 @@ x = cartesian_grid.x[:,0,0]/u.kpc
 y = cartesian_grid.y[0,:,0]/u.kpc
 z = cartesian_grid.z[0,0,:]/u.kpc
 ver_slice = alpha_data[:,int(len(y)/2),:]/alpha_data.unit
-plt.contourf(x,y,ver_slice,10,cmap='Blues')
+plt.contourf(x,z,ver_slice.T,10,cmap='Blues')
 plt.title('JF12 magnetic field perpendicular LOS component')
-plt.ylabel('y kpc')
+plt.ylabel('z kpc')
 plt.xlabel('x kpc')
 plt.colorbar()
 
