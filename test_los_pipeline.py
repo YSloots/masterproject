@@ -6,9 +6,7 @@ from imagine.simulators import Simulator
 from scipy.special import gamma as gammafunc
 import nifty7 as ift
 
-from imagine.fields.hamx import BregLSA, BregLSAFactory
-from imagine.fields.hamx import CREAna, CREAnaFactory
-#from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12, WrappedJF12Factory
+from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12
 
 import astropy.units as u
 from astropy.coordinates import spherical_to_cartesian
@@ -310,11 +308,17 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         e     = (cons.e).gauss/(cons.e).gauss.unit
         me    = cons.m_e.cgs/cons.m_e.cgs.unit
         c     = cons.c.cgs/cons.c.cgs.unit
-        # Check argument units and remove them for the calculation
-        alpha = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
+        # Check argument units and remove them for the calculation        
         vobs  = self.observing_frequency.to(1/u.s)*u.s
         ncre  = ncre.to(u.cm**-3)*u.cm**3
         Bper  = Bper.to(u.G)/u.G
+        # Handle two spectral index cases:
+        try: # alpha is a constant spectral index globally 
+            alpha = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
+        except: pass
+        try: # alpha is an instance of a 3D scalar field
+            alpha = self.fields['cosmic_ray_electron_spectral_index']
+        except: pass
         # Calculate emissivity grid
         fraction1 = (np.sqrt(3)*e**3*ncre/(8*np.pi*me*c**2))
         fraction2 = (4*np.pi*vobs*me*c/(3*e))
@@ -339,7 +343,6 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
         """Calculate a 3D box with synchrotron emissivities"""        
         
         # Acces field data
-        alpha     = self.field_parameter_values['cosmic_ray_electron_density']['spectral_index']
         ncre_grid = self.fields['cosmic_ray_electron_density']  # in units cm^-3
         #B_grid    = self.fields['magnetic_field']/u.microgauss * ugauss_B # fixing astropy cgs units
         B_grid    = self.fields['magnetic_field'] # fixing is now done inside emissivity calculation
@@ -370,155 +373,230 @@ class SpectralSynchrotronEmissivitySimulator(Simulator):
 
 #%% Make a simulated dataset with known model paramters
 
-
-
-print("Producing simple simulated dataset ...\n")
-
-# Mock dataset
+# Gobal testing constants
 Ndata = 100
 observing_frequency = 90*MHz
 dunit = u.K/u.kpc
-T     = np.zeros(Ndata)*dunit # placeholder
-T_err = np.zeros(Ndata)*dunit# placeholder
-lat   = 90*np.linspace(-1,1,Ndata)*u.deg
-lon   = 360*np.linspace(0,1,Ndata)*u.deg*300
 
-fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
-fake_dset = img.observables.TabularDataset(fake_data,
-                                           name='average_los_brightness',
-                                           frequency=observing_frequency,
-                                           units=dunit,
-                                           data_col='brightness',
-                                           err_col='err',
-                                           lat_col='lat',
-                                           lon_col='lon')
-mea = img.observables.Measurements(fake_dset)
+def simple_setup():
 
-
-
-# Setup coordinate grid
-box_size       = 15*u.kpc
-cartesian_grid = img.fields.UniformGrid(box=[[-box_size, box_size],
-                                             [-box_size, box_size],
-                                             [-box_size, box_size]],
-                                             resolution = [30,30,30])
-
-# Cosmic-Ray Electron Model
-cre = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
-                                        parameters={'density':1.0e-7*u.cm**-3,'spectral_index':-3.0})
-
-
-# Magnetic Field Model
-Bfield = fields.ConstantMagneticField(
-    grid = cartesian_grid,
-    parameters={'Bx': 6*u.microgauss,
-                'By': 0*u.microgauss,
-                'Bz': 0*u.microgauss})
-
-
-observer = np.array([0,0,0])*u.kpc
-hIIdist  = (box_size-2*u.kpc)*np.random.rand(Ndata) + 1*u.kpc # uniform between [1, max-1] kpc
-#print("\nSimulation domain: \n", cartesian_grid.box)
-#print("Min-max of hIIdist: ", np.min(hIIdist), np.max(hIIdist))
-dist_err = hIIdist/10
-NF = int(0.2*Ndata) # 20% of all measurements
-F  = np.full(shape=(NF), fill_value='F', dtype=str)
-B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
-FB = np.hstack((F,B))
-np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
-
-
-config = {'grid'    :cartesian_grid,
-          'observer':observer,
-          'dist':hIIdist,
-          'e_dist':dist_err,
-          'lat':lat,
-          'lon':lon,
-          'FB':FB}
+    print("Producing simple simulated dataset ...\n")
+    
+    # Mock dataset
+    T     = np.zeros(Ndata)*dunit # placeholder
+    T_err = np.zeros(Ndata)*dunit# placeholder
+    lat   = 90*np.linspace(-1,1,Ndata)*u.deg
+    lon   = 360*np.linspace(0,1,Ndata)*u.deg*300
+    
+    fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
+    fake_dset = img.observables.TabularDataset(fake_data,
+                                               name='average_los_brightness',
+                                               frequency=observing_frequency,
+                                               units=dunit,
+                                               data_col='brightness',
+                                               err_col='err',
+                                               lat_col='lat',
+                                               lon_col='lon')
+    mea = img.observables.Measurements(fake_dset)
+    
+    
+    
+    # Setup coordinate grid
+    box_size       = 15*u.kpc
+    cartesian_grid = img.fields.UniformGrid(box=[[-box_size, box_size],
+                                                 [-box_size, box_size],
+                                                 [-box_size, box_size]],
+                                                 resolution = [30,30,30])
+    
+    # Cosmic-Ray Electron Model
+    cre = fields.ConstantCosmicRayElectrons(grid=cartesian_grid,
+                                            parameters={'density':1.0e-7*u.cm**-3,'spectral_index':-3.0})
+    
+    
+    # Magnetic Field Model
+    Bfield = fields.ConstantMagneticField(
+        grid = cartesian_grid,
+        parameters={'Bx': 6*u.microgauss,
+                    'By': 0*u.microgauss,
+                    'Bz': 0*u.microgauss})
+    
+    
+    observer = np.array([0,0,0])*u.kpc
+    hIIdist  = (box_size-2*u.kpc)*np.random.rand(Ndata) + 1*u.kpc # uniform between [1, max-1] kpc
+    #print("\nSimulation domain: \n", cartesian_grid.box)
+    #print("Min-max of hIIdist: ", np.min(hIIdist), np.max(hIIdist))
+    dist_err = hIIdist/10
+    NF = int(0.2*Ndata) # 20% of all measurements
+    F  = np.full(shape=(NF), fill_value='F', dtype=str)
+    B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
+    FB = np.hstack((F,B))
+    np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
+    
+    
+    config = {'grid'    :cartesian_grid,
+              'observer':observer,
+              'dist':hIIdist,
+              'e_dist':dist_err,
+              'lat':lat,
+              'lon':lon,
+              'FB':FB}
+    return cre, Bfield, mea, config
 
 
 
 #%% More complicated models
 
-"""
+
 def randrange(minvalue,maxvalue,Nvalues):
     return (maxvalue-minvalue)*np.random.rand(Nvalues)+minvalue
 
+def JF12CREprofile_setup():
+    print("Producing simulated data with JF12 and CREprofile ...\n")
+    
+    
+    # Less redundancy in coordinate grid
+    xmax = 15*u.kpc
+    ymax = 15*u.kpc
+    zmax =  2*u.kpc
+    cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
+                                                 [-ymax, ymax],
+                                                 [-zmax, zmax]],
+                                                 resolution = [30,30,30]) # skipping x=y=0
+    
+    # Mock dataset
+    T     = np.zeros(Ndata)*dunit # placeholder
+    T_err = np.zeros(Ndata)*dunit # placeholder
+    x = randrange(-0.9*xmax,0.9*xmax,Ndata)
+    y = randrange(-0.9*ymax,0.9*ymax,Ndata)
+    z = randrange(-0.9*zmax,0.9*zmax,Ndata)
+    hIIdist, lat, lon = cartesian_to_spherical(x+8.5*u.kpc,y,z)
+    #hIIdist  = np.sqrt((x+8.5)**2+y**2+z**2)*u.kpc
+    observer = np.array([-8.5,0,0])*u.kpc
+    dist_err = hIIdist/5
+    
+    # Define front or behind measurements
+    NF = int(0.2*Ndata) # 20% of all measurements
+    F  = np.full(shape=(NF), fill_value='F', dtype=str)
+    B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
+    FB = np.hstack((F,B))
+    np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
+    
+    # Save the full simulation configuration
+    config = {'grid'    :cartesian_grid,
+              'observer':observer,
+              'dist':hIIdist,
+              'e_dist':dist_err,
+              'lat':lat,
+              'lon':lon,
+              'FB':FB}
+    
+    # Save placeholder dataset
+    fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
+    fake_dset = img.observables.TabularDataset(fake_data,
+                                               name='average_los_brightness',
+                                               frequency=observing_frequency,
+                                               units=dunit,
+                                               data_col='brightness',
+                                               err_col='err',
+                                               lat_col='lat',
+                                               lon_col='lon')
+    mea = img.observables.Measurements(fake_dset)
+    
+    # Fieldsetup
+    cre = fields.PowerlawCosmicRayElectrons(grid=cartesian_grid,
+                                            parameters = {'scale_radius':10*u.kpc,
+                                                         'scale_height':1*u.kpc,
+                                                         'central_density':1e-5*u.cm**-3,
+                                                         'spectral_index':-3})
+    
+    
+    # Magnetic Field Model
+    Bfield = WrappedJF12(grid=cartesian_grid)
 
-print("Producing more realistic simulated dataset ...\n")
-
-
-# Less redundancy in coordinate grid
-xmax = 15*u.kpc
-ymax = 15*u.kpc
-zmax =  2*u.kpc
-cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
-                                             [-ymax, ymax],
-                                             [-zmax, zmax]],
-                                             resolution = [30,30,30]) # skipping x=y=0
-
-# Mock dataset
-Ndata = 20
-observing_frequency = 90*MHz
-dunit = u.K/u.kpc
-T     = np.zeros(Ndata)*dunit # placeholder
-T_err = np.zeros(Ndata)*dunit # placeholder
-x = randrange(-0.9*xmax,0.9*xmax,Ndata)
-y = randrange(-0.9*ymax,0.9*ymax,Ndata)
-z = randrange(-0.9*zmax,0.9*zmax,Ndata)
-hIIdist, lat, lon = cartesian_to_spherical(x+8.5*u.kpc,y,z)
-#hIIdist  = np.sqrt((x+8.5)**2+y**2+z**2)*u.kpc
-observer = np.array([-8.5,0,0])*u.kpc
-dist_err = hIIdist/5
-
-# Define front or behind measurements
-NF = int(0.2*Ndata) # 20% of all measurements
-F  = np.full(shape=(NF), fill_value='F', dtype=str)
-B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
-FB = np.hstack((F,B))
-np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
-
-# Save the full simulation configuration
-config = {'grid'    :cartesian_grid,
-          'observer':observer,
-          'dist':hIIdist,
-          'e_dist':dist_err,
-          'lat':lat,
-          'lon':lon,
-          'FB':FB}
-
-# Save placeholder dataset
-fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
-fake_dset = img.observables.TabularDataset(fake_data,
-                                           name='average_los_brightness',
-                                           frequency=observing_frequency,
-                                           units=dunit,
-                                           data_col='brightness',
-                                           err_col='err',
-                                           lat_col='lat',
-                                           lon_col='lon')
-mea = img.observables.Measurements(fake_dset)
+    return cre, Bfield, mea, config
 
 
 
-# Fieldsetup
-cre = fields.PowerlawCosmicRayElectrons(grid=cartesian_grid,
-                                        parameters = {'scale_radius':10*u.kpc,
-                                                     'scale_height':1*u.kpc,
-                                                     'central_density':1e-5*u.cm**-3,
-                                                     'spectral_index':-3})
+def spectral_hardening_setup():
+    print("Producing simulated data JF12 and changing spectral index ...\n")
+    
+    
+    # Less redundancy in coordinate grid
+    xmax = 15*u.kpc
+    ymax = 15*u.kpc
+    zmax =  2*u.kpc
+    cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
+                                                 [-ymax, ymax],
+                                                 [-zmax, zmax]],
+                                                 resolution = [30,30,30]) # skipping x=y=0
+    
+    # Mock dataset
+    T     = np.zeros(Ndata)*dunit # placeholder
+    T_err = np.zeros(Ndata)*dunit # placeholder
+    x = randrange(-0.9*xmax,0.9*xmax,Ndata)
+    y = randrange(-0.9*ymax,0.9*ymax,Ndata)
+    z = randrange(-0.9*zmax,0.9*zmax,Ndata)
+    hIIdist, lat, lon = cartesian_to_spherical(x+8.5*u.kpc,y,z)
+    #hIIdist  = np.sqrt((x+8.5)**2+y**2+z**2)*u.kpc
+    observer = np.array([-8.5,0,0])*u.kpc
+    dist_err = hIIdist/5
+    
+    # Define front or behind measurements
+    NF = int(0.2*Ndata) # 20% of all measurements
+    F  = np.full(shape=(NF), fill_value='F', dtype=str)
+    B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
+    FB = np.hstack((F,B))
+    np.random.shuffle(FB) # This seems to cause a bug with the nifty integration!!
+    
+    # Save the full simulation configuration
+    config = {'grid'    :cartesian_grid,
+              'observer':observer,
+              'dist':hIIdist,
+              'e_dist':dist_err,
+              'lat':lat,
+              'lon':lon,
+              'FB':FB}
+    
+    # Save placeholder dataset
+    fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
+    fake_dset = img.observables.TabularDataset(fake_data,
+                                               name='average_los_brightness',
+                                               frequency=observing_frequency,
+                                               units=dunit,
+                                               data_col='brightness',
+                                               err_col='err',
+                                               lat_col='lat',
+                                               lon_col='lon')
+    mea = img.observables.Measurements(fake_dset)
+    
+    # Fieldsetup
+    cre_num = fields.CRENumberDensity(grid= cartesian_grid,
+                                      parameters={'scale_radius':10*u.kpc,
+                                                  'scale_height':1*u.kpc,
+                                                  'central_density':1e-5*u.cm**-3})
+    cre_alpha = fields.SpectralIndexLinearVerticalProfile(
+        grid=cartesian_grid,
+        parameters={'soft_index':-4, 'hard_index':-2.5, 'slope':1*u.kpc**-1})
+    
+    # Magnetic Field Model
+    Bfield = WrappedJF12(grid=cartesian_grid)
+
+    return cre_num, cre_alpha, Bfield, mea, config
 
 
-# Magnetic Field Model
-Bfield = WrappedJF12(grid=cartesian_grid)
-"""
+
 
 #%% Produce simulated data
 
-test_sim   = SpectralSynchrotronEmissivitySimulator(mea, config, plotting=False) # create instance
-simulation = test_sim([cre, Bfield])
+#cre, Bfield, mea, config = simple_setup()
+#cre, Bfield, mea, config = JF12CREprofile_setup()
+cre_num, cre_alpha, Bfield, mea, config = spectral_hardening_setup()
 
-# Retreive simulated data
+test_sim   = SpectralSynchrotronEmissivitySimulator(mea, config, plotting=False) # create instance
+#simulation = test_sim([cre, Bfield])
+simulation = test_sim([cre_num,cre_alpha,Bfield])
+
+# Retrieve simulated data
 key = ('average_los_brightness', 0.09000000000000001, 'tab', None)
 sim_brightness = simulation[key].data[0] * simulation[key].unit
 
@@ -530,8 +608,9 @@ print("Simulated emissivities: \n", sim_brightness)
 
 #%% Setup full pipeline
 
+
 # Setup (simulated) dataset
-sim_data = {'brightness':sim_brightness,'err':sim_brightness/10,'lat':lat,'lon':lon}
+sim_data = {'brightness':sim_brightness,'err':sim_brightness/10,'lat':config['lat'],'lon':config['lon']}
 sim_dset = img.observables.TabularDataset(sim_data,
                                            name='average_los_brightness',
                                            frequency=observing_frequency,
@@ -549,23 +628,40 @@ los_simulator = SpectralSynchrotronEmissivitySimulator(sim_mea, config) # create
 likelihood = img.likelihoods.SimpleLikelihood(sim_mea)
 
 
+#%% Setup field factories (instances cre and Bfield have to be defined in previous section)
 
-# Setup field factories (instances cre and Bfield have to be defined in previous section)
+def simple_setup_factory():
+    """
+    Attempt to retreive the correct spectral index alpha=-3
+    
+    This factory setup works for case I: simple and case II: the JF12CREprofile    
+    """
+    
+    B_factory  = img.fields.FieldFactory(field_class = Bfield, grid=config['grid'])
+    CRE_factory = img.fields.FieldFactory(field_class = cre, grid=config['grid']) 
+    CRE_factory.active_parameters=('spectral_index',)
+    CRE_factory.priors = {'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
+    return [CRE_factory, B_factory]
 
-CRE_factory = img.fields.FieldFactory(field_class = cre, grid=cartesian_grid) # no active paramters
-CRE_factory.active_parameters=('spectral_index',)
-CRE_factory.priors = {'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
-
-B_factory = img.fields.FieldFactory(field_class = Bfield, grid=cartesian_grid)
-
-factory_list = [CRE_factory, B_factory]
 
 
+def spectral_hardening_setup_factory():
+    print("Setting spectral harding slope as free parameter")
+    
+    cre_num_factory = img.fields.FieldFactory(field_class = cre_num, grid=config['grid'])
+    B_factory       = img.fields.FieldFactory(field_class = Bfield, grid=config['grid'])
+    alpha_factory   = img.fields.FieldFactory(field_class = cre_alpha, grid=config['grid'])
+    alpha_factory.active_parameters=('slope',)
+    alpha_factory.priors = {'slope':img.priors.FlatPrior(xmin=0*u.kpc**-1, xmax=5*u.kpc**-1)}
+    return [cre_num_factory, alpha_factory, B_factory]
 
-# IF we want to do a JF12 pipeline we have to fix the nans problem first!!!
-# -> we can use even resolution grid to avoid points on z-axis for now
 
-"""
+#factory_list = simple_setup_factory()
+factory_list = spectral_hardening_setup_factory()
+
+#%% Run pipeline
+
+
 # Setup pipeline
 print("Starting pipeline ... \n")
 pipeline = img.pipelines.MultinestPipeline( simulator     = los_simulator,
@@ -580,7 +676,7 @@ results = pipeline()
 
 print(dir(results))
 
-"""
+
 
 
 

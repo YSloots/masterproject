@@ -416,8 +416,9 @@ cre_num = fields.CRENumberDensity(grid= cartesian_grid,
                                   parameters={'scale_radius':10*u.kpc,
                                               'scale_height':1*u.kpc,
                                               'central_density':1e-5*u.cm**-3})
-cre_alpha = fields.SpectralIndexLinearVerticalProfile(grid=cartesian_grid,
-                                                     parameters={'soft_index':-3, 'hard_index':-3, 'slope':-0*u.kpc**-1})
+cre_alpha = fields.SpectralIndexLinearVerticalProfile(
+    grid=cartesian_grid,
+    parameters={'soft_index':-3, 'hard_index':-3, 'slope':-0*u.kpc**-1})
 
 print(cre_num.get_data())
 print(cre_alpha.get_data())

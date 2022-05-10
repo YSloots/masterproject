@@ -84,19 +84,19 @@ def project_to_perpendicular(vectorfield, unitvector_grid):
 cartesian_grid = img.fields.UniformGrid(box=[[-15*u.kpc, 15*u.kpc],
                                              [-15*u.kpc, 15*u.kpc],
                                              [-5*u.kpc, 5*u.kpc]],
-                                             resolution = [5,5,5])
+                                             resolution = [51,51,51])
 # Get field data
 Bfield = WrappedJF12(grid=cartesian_grid) # default parameters
 Bdata  = Bfield.get_data()
-print(Bdata)
-print(Bdata[np.abs(Bdata/Bdata.unit) > 1e-12])
-print(np.mean(Bdata))
+#print(Bdata)
+#print(Bdata[np.abs(Bdata/Bdata.unit) > 1e-12])
+#print(np.mean(Bdata))
 #print(np.sum(np.isnan(Bdata)))
 #Bdata[:,:,:,2] = np.zeros(cartesian_grid.resolution) # set field in z-direction to zero
 azimuth  = get_unit_vectors(observer=np.array([0,0,0])*u.kpc, grid=cartesian_grid)
 Bazimuth = project_to_perpendicular(vectorfield=Bdata, unitvector_grid=azimuth)
 
-"""
+
 # Make figure
 x = cartesian_grid.x[:,0,0]/u.kpc
 y = cartesian_grid.y[0,:,0]/u.kpc
@@ -111,7 +111,7 @@ plt.colorbar()
 print("Saving figure")
 plt.savefig(figpath+'JF12_horizontalsliceGalCentr.png')
 plt.close('all')
-"""
+
 
 
 
