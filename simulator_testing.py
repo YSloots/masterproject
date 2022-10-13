@@ -17,7 +17,7 @@ from astropy.coordinates import spherical_to_cartesian
 from astropy.coordinates import cartesian_to_spherical
 
 rundir  = 'runs/mockdata'
-figpath = 'figures/'
+figpath = 'figures/simulator_testing/'
 logdir  = 'log/'
 
 import astropy.units as u
@@ -61,7 +61,7 @@ def randrange(minvalue,maxvalue,Nvalues):
     return (maxvalue-minvalue)*np.random.rand(Nvalues)+minvalue
 
 def get_label_FB(Ndata):
-    NF = int(0.2*Ndata) # 20% of all measurements
+    NF = int(0.2*Ndata) # 20% of all measurements are front measurements
     F  = np.full(shape=(NF), fill_value='F', dtype=str)
     B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
     FB = np.hstack((F,B))
@@ -122,7 +122,7 @@ def test_simulator(Ndata, resolution = [30,30,30], keepinit=False):
 # pipeline controller
 def simple_pipeline(noise=0.1,fakemodel=False):
     """
-    Test retrieval of correct cre spectral index for constant GMF and CRE density
+    Test retrieval of correct cre spectral index for CONSTANT GMF and CRE density
     """
     
     # Produce empty data format  
@@ -172,7 +172,7 @@ def simple_pipeline(noise=0.1,fakemodel=False):
     likelihood = img.likelihoods.SimpleLikelihood(sim_mea)    
     
     # Setup field factories and their active parameters
-    if fakemodel:
+    if fakemodel: # overwrite Bfield with a different one from what was used for the simulated dataset
         rundir = 'runs/mockdatafake'
         Bfield = img.fields.ConstantMagneticField(
         grid = cartesian_grid,
@@ -202,11 +202,21 @@ def simple_pipeline(noise=0.1,fakemodel=False):
 
 
 # pipeline controller
-def JF12constindexCREprofile_setup():
+def JF12constindexCREprofile_setup(samplecondition=None):
     """
     Test retrieval of correct cre spectral index for regular JF12 magnetic field
-    and a exponential number density CRE model with constant spectral index.
+    and an exponential number density CRE model with constant spectral index.
+    
+    Valid sample conditions are:
+    - 'alpha'
+    - 'allCRE'
+    - 'Bamp+allCRE'
+    
     """
+    
+    if samplecondition == None: 
+        print("Choose a valid sample condition!")
+        return
     
     # Produce empty data format
     T     = np.zeros(Ndata)*dunit # placeholder
@@ -237,7 +247,7 @@ def JF12constindexCREprofile_setup():
     # Setup observing configuration
     observer = np.array([-8.5,0,0])*u.kpc
     dist_err = hIIdist/5
-    FB       = get_label_FB()
+    FB       = get_label_FB(Ndata)
     config = {'grid'    :cartesian_grid,
               'observer':observer,
               'dist':hIIdist,
@@ -247,7 +257,7 @@ def JF12constindexCREprofile_setup():
               'FB':FB}
     
     # Produce simulated dataset with noise
-    mock_data = produce_mock_data(field_list=[cre,Bfield], mea=mea, config=config)
+    mock_data = produce_mock_data(field_list=[cre,Bfield], mea=mea, config=config, noise=0.01)
     sim_data = {'brightness':mock_data,'err':mock_data/10,'lat':config['lat'],'lon':config['lon']}
     sim_mea  = fill_imagine_dataset(sim_data)
 
@@ -260,8 +270,33 @@ def JF12constindexCREprofile_setup():
     # Setup field factories and their active parameters
     B_factory   = img.fields.FieldFactory(field_class = Bfield, grid=config['grid'])
     CRE_factory = img.fields.FieldFactory(field_class = cre, grid=config['grid']) 
-    CRE_factory.active_parameters = ('spectral_index',)
-    CRE_factory.priors = {'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
+    if samplecondition == 'alpha': # 1 parameter
+        CRE_factory.active_parameters = ('spectral_index',)
+        CRE_factory.priors = {'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
+    if samplecondition == 'allCRE': # 4 parameters
+        CRE_factory.active_parameters = ('scale_radius','scale_height','central_density','spectral_index')
+        CRE_factory.priors = {
+        'scale_radius':img.priors.FlatPrior(xmin=5*u.kpc, xmax=15*u.kpc),
+        'scale_height':img.priors.FlatPrior(xmin=0.1*u.kpc, xmax=2*u.kpc),
+        'central_density':img.priors.FlatPrior(xmin=1e-6*u.cm**-3, xmax=1e-4*u.cm**-3),
+        'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
+    if samplecondition == 'Bamp+allCRE': # 12 parameters
+        CRE_factory.active_parameters = ('scale_radius','scale_height','central_density','spectral_index')
+        CRE_factory.priors = {
+        'scale_radius':img.priors.FlatPrior(xmin=5*u.kpc, xmax=15*u.kpc),
+        'scale_height':img.priors.FlatPrior(xmin=0.1*u.kpc, xmax=2*u.kpc),
+        'central_density':img.priors.FlatPrior(xmin=1e-6*u.cm**-3, xmax=1e-4*u.cm**-3),
+        'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
+        B_factory.active_paramters = ('b_arm_1','b_arm_2','b_arm_3',' b_arm_4','b_arm_5','b_arm_6','b_arm_7','b_ring')
+        B_facotry.priors = {        
+        'b_arm_1':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
+        'b_arm_2':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
+        'b_arm_3':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
+        'b_arm_4':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
+        'b_arm_5':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
+        'b_arm_6':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
+        'b_arm_7':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
+        'b_ring' :img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss)}
     factory_list = [B_factory, CRE_factory]
     
     # Setup final pipeline
@@ -272,9 +307,96 @@ def JF12constindexCREprofile_setup():
     pipeline.sampling_controllers = {'evidence_tolerance': 0.5, 'n_live_points': 200}
     
     # Run!
-    results = pipeline()    
+    results = pipeline()
     
-    return results
+    summary = pipeline.posterior_summary
+    samples = pipeline.samples
+    
+    return samples, summary
+
+
+# pipeline controller
+def turbulentJF12CREmodelretrieval_setup():
+
+    # Produce empty data format
+    T     = np.zeros(Ndata)*dunit # placeholder
+    T_err = np.zeros(Ndata)*dunit # placeholder
+    xmax = 15*u.kpc
+    ymax = 15*u.kpc
+    zmax =  2*u.kpc
+    x = randrange(-0.9*xmax,0.9*xmax,Ndata)
+    y = randrange(-0.9*ymax,0.9*ymax,Ndata)
+    z = randrange(-0.9*zmax,0.9*zmax,Ndata)
+    hIIdist, lat, lon = cartesian_to_spherical(x+8.5*u.kpc,y,z)
+    fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
+    mea       = fill_imagine_dataset(data=fake_data)
+
+    
+    # Setup the Galactic field models
+    cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
+                                                 [-ymax, ymax],
+                                                 [-zmax, zmax]],
+                                                 resolution = [30,30,30]) # skipping x=y=0
+    # Setup observing configuration                                          
+    observer = np.array([-8.5,0,0])*u.kpc
+    dist_err = hIIdist/5
+    FB       = get_label_FB(Ndata)
+    config = {'grid'    :cartesian_grid,
+              'observer':observer,
+              'dist':hIIdist,
+              'e_dist':dist_err,
+              'lat':lat,
+              'lon':lon,
+              'FB':FB}
+    
+    cre = img.fields.PowerlawCosmicRayElectrons(grid=cartesian_grid,
+                                            parameters = {'scale_radius':10*u.kpc,
+                                                         'scale_height':1*u.kpc,
+                                                         'central_density':1e-5*u.cm**-3,
+                                                         'spectral_index':-3})
+    
+    # Do sampling runs with different simulated datasets
+    summary_t = []
+    samples_t = []
+    tlist     = []
+    for t in chooseturb:
+        
+        Bfield = WrappedJF12(grid=cartesian_grid)
+        # add turbulence
+        
+        # Produce simulated dataset with noise
+        mock_data = produce_mock_data(field_list=[cre,Bfield], mea=mea, config=config, noise=0.01)
+        sim_data = {'brightness':mock_data,'err':mock_data/10,'lat':config['lat'],'lon':config['lon']}
+        sim_mea  = fill_imagine_dataset(sim_data)
+    
+        # Setup simulator
+        los_simulator = SpectralSynchrotronEmissivitySimulator(sim_mea, config)
+        
+        # Initialize likelihood
+        likelihood = img.likelihoods.SimpleLikelihood(sim_mea)    
+        
+        # Setup field factories and their active parameters
+        B_factory   = img.fields.FieldFactory(field_class = Bfield, grid=config['grid'])
+        CRE_factory = img.fields.FieldFactory(field_class = cre, grid=config['grid']) 
+        CRE_factory.active_parameters = ('spectral_index',)
+        CRE_factory.priors = {'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
+        factory_list = [B_factory, CRE_factory]
+        
+        # Setup final pipeline
+        pipeline = img.pipelines.MultinestPipeline( simulator     = los_simulator,
+                                                    run_directory = rundir,
+                                                    factory_list  = factory_list,
+                                                    likelihood    = likelihood)
+        pipeline.sampling_controllers = {'evidence_tolerance': 0.5, 'n_live_points': 200}
+        
+        # Run!
+        results = pipeline()
+        
+        summary_t.append(pipeline.posterior_summary)
+        samples_t.append(pipeline.samples)
+        tlist.append(t)
+    
+    return tlist, samples_t, summary_t
 
 
 # pipeline controller
@@ -315,7 +437,7 @@ def JF12spectralhardeningCREprofile_setup():
     # Setup observing configuration
     observer = np.array([-8.5,0,0])*u.kpc
     dist_err = hIIdist/5
-    FB       = get_label_FB()
+    FB       = get_label_FB(Ndata)
     config = {'grid'    :cartesian_grid,
               'observer':observer,
               'dist':hIIdist,
@@ -325,7 +447,7 @@ def JF12spectralhardeningCREprofile_setup():
               'FB':FB}
     
     # Produce simulated dataset with noise
-    mock_data = produce_mock_data(field_list=[cre_num,cre_alpha,Bfield], mea=mea, config=config)
+    mock_data = produce_mock_data(field_list=[cre_num,cre_alpha,Bfield], mea=mea, config=config, noise=0.01)
     sim_data = {'brightness':mock_data,'err':mock_data/10,'lat':config['lat'],'lon':config['lon']}
     sim_mea  = fill_imagine_dataset(sim_data)
 
@@ -357,7 +479,10 @@ def JF12spectralhardeningCREprofile_setup():
     # Run!
     results = pipeline()    
     
-    return results    
+    summary = pipeline.posterior_summary
+    samples = pipeline.samples
+    
+    return samples, summary  
 
 
 
@@ -431,7 +556,6 @@ def plot_resolutionvstime():
 #plot_resolutionvstime()
 
 
-
 def get_noisevsevidence():
     rel_brightness_error = 10**np.linspace(-2,0,20)
     reallogZ  = []
@@ -465,25 +589,108 @@ def plot_noisevsevidence():
     plt.close('all')
     plt.plot(Te, rlZ, label='real model')
     #plt.fill_between(Te, rlZ-rlZe, rlZ+rlZe,color='gray', alpha=0.2) # errors on the evidence are tiny!!
-    plt.plot(Te, rlZ-flZ, label='fake model')
+    plt.plot(Te, flZ, label='fake model')
     #plt.fill_between(Te, flZ-flZe, flZ+flZe,color='gray', alpha=0.2)
     plt.xscale('log')
     plt.legend()
     plt.title("Brightness temperature noise performance")
     plt.ylabel("Evidence (logZ)")
-    plt.xlabel("Relative error")
+    plt.xlabel("Relative brightness error Sigma_T")
     plt.savefig(figpath+'noisevsevidence.png')
-plot_noisevsevidence()
+#plot_noisevsevidence()
 
 
 
+#%% Plotting routines for parameter inference runs
+
+import seaborn as sns
+import pandas as pd
+
+def plot_samples_seaborn(samp, colnames, fname):
+    
+    def show_truth_in_jointplot(jointplot, true_x, true_y, color='r'):
+        for ax in (jointplot.ax_joint, jointplot.ax_marg_x):
+            ax.vlines([true_x], *ax.get_ylim(), colors=color)
+        for ax in (jointplot.ax_joint, jointplot.ax_marg_y):
+            ax.hlines([true_y], *ax.get_xlim(), colors=color)
+
+    snsfig = sns.jointplot(data=samp, kind='kde')
+    snsfig.plot_joint(sns.scatterplot, linewidth=0, marker='.', color='0.3')
+    #show_truth_in_jointplot(snsfig, a0, b0)
+    plt.savefig(fname)
+
+def plot_seaborn_corner(samples, colnames, fname):
+    #print(samples)
+    df  = pd.DataFrame(data=samples, columns = colnames)
+    fig = sns.pairplot(data=df, corner=True, kind='kde')
+    plt.savefig(fname)
 
 
+#%% Results 4.2 Sampeling parameters of JF12 + Const-Index CRE profile
+
+# Just retrieve spectral index
+def get_samples_alpha():
+    os.system("rm -r runs/mockdata/*")
+    samples, summary = JF12constindexCREprofile_setup(samplecondition = 'alpha')
+    with open(logdir+'samples_alpha.npy', 'wb') as f:
+        np.save(f, summary)
+        np.save(f, samples)
+#get_samples_alpha()
+
+def plot_samples_alpha():
+    with open(logdir+'samples_alpha.npy', 'rb') as f:
+        summary = np.load(f, allow_pickle=True)
+        samples = np.load(f)
+    npsamp = []
+    for s in samples: npsamp.append(s[0])
+    plt.hist(npsamp)
+    plt.savefig(figpath+'samplesalpha.png')
+#plot_samples_alpha()
 
 
+# Retrieve all CRE model parameters at once
+def get_samples_CRE():
+    os.system("rm -r runs/mockdata/*")
+    samples, summary = JF12constindexCREprofile_setup(samplecondition = 'allCRE')
+    with open(logdir+'samples_CRE.npy', 'wb') as f:
+        np.save(f, summary)
+        np.save(f, samples)
+#get_samples_CRE()
+
+def plot_samples_CRE():
+    with open(logdir+'samples_CRE.npy', 'rb') as f:
+        summary = np.load(f, allow_pickle=True)
+        samples = np.load(f)
+    npsamp = []
+    for s in samples: npsamp.append(list(s))
+    npsamp = np.array(npsamp)    
+    names = ('scale_radius','scale_height','central_density','spectral_index')
+    plt.close('all')
+    plot_seaborn_corner(samples=npsamp, colnames=names, fname=figpath+'samplesCRE.png')
+#plot_samples_CRE()
 
 
+# Retrieve all B amplitudes for JF12 and all CRE model parameters at once
+def get_samples_JF12andCRE():
+    os.system("rm -r runs/mockdata/*")
+    samples, summary = JF12constindexCREprofile_setup(samplecondition = 'Bamp+allCRE')
+    with open(logdir+'samples_JF12CRE.npy', 'wb') as f:
+        np.save(f, summary)
+        np.save(f, samples)
+#get_samples_CRE()
 
+def plot_samples_JF12andCRE():
+    with open(logdir+'samples_JF12CRE.npy', 'rb') as f:
+        summary = np.load(f, allow_pickle=True)
+        samples = np.load(f)
+    npsamp = []
+    for s in samples: npsamp.append(list(s))
+    npsamp = np.array(npsamp)    
+    names =  ('b_arm_1','b_arm_2','b_arm_3',' b_arm_4','b_arm_5','b_arm_6','b_arm_7','b_ring')
+    names += ('scale_radius','scale_height','central_density','spectral_index')
+    plt.close('all')
+    plot_seaborn_corner(samples=npsamp, colnames=names, fname=figpath+'samplesCRE.png')
+#plot_samples_JF12andCRE()
 
 
 

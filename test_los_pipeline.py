@@ -516,7 +516,6 @@ def JF12CREprofile_setup():
     return cre, Bfield, mea, config
 
 
-
 def spectral_hardening_setup():
     print("Producing simulated data JF12 and changing spectral index ...\n")
     
