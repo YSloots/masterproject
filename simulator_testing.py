@@ -7,35 +7,42 @@ and the retrieval of model parameters from simulated datasets.
 """
 
 #%% Imports and settings
-
+#===================================================================================
+# Imagine
 import imagine as img
 from imagine.simulators.synchrotronlos import SpectralSynchrotronEmissivitySimulator
 from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12
+from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12Factory
+from imagine.fields.field_utility import FieldAdder
+from imagine.fields.field_utility import ArrayMagneticField
 
+# Utility
+import os
 import numpy as np
+from time import perf_counter
+import matplotlib.pyplot as plt
 from astropy.coordinates import spherical_to_cartesian
 from astropy.coordinates import cartesian_to_spherical
+import struct
 
-rundir  = 'runs/mockdata'
-figpath = 'figures/simulator_testing/'
-logdir  = 'log/'
-
-import astropy.units as u
-MHz   = 1e6 / u.s
+# Directory paths
+rundir    = 'runs/mockdata'
+figpath   = 'figures/simulator_testing/'
+fieldpath = 'arrayfields/'
+logdir    = 'log/'
 
 # Gobal testing constants
+import astropy.units as u
+MHz   = 1e6 / u.s
 Ndata = 100
 observing_frequency = 90*MHz
 dunit = u.K/u.kpc
 
-from time import perf_counter
-import matplotlib.pyplot as plt
 
-import os
 
-#%% Code reduction functions and pipeline setup controlers
+#%% Code reduction functions
+#===================================================================================
 
-# code duplication reduction
 def fill_imagine_dataset(data):
     fake_dset = img.observables.TabularDataset(data,
                                                name='average_los_brightness',
@@ -68,6 +75,16 @@ def get_label_FB(Ndata):
     np.random.shuffle(FB) 
     return FB
 
+def load_JF12rnd(shape=(30,30,30,3)):
+    with open(fieldpath+"brnd.bin", "rb") as f:
+        arr = f.read()
+        arr = struct.unpack("d"*(len(arr)//8), arr[:])
+        arr = np.asarray(arr).reshape(shape)
+    return arr
+
+
+#%% Pipeline controllers
+#===================================================================================
 
 # simulator testing
 def test_simulator(Ndata, resolution = [30,30,30], keepinit=False):
@@ -287,8 +304,8 @@ def JF12constindexCREprofile_setup(samplecondition=None):
         'scale_height':img.priors.FlatPrior(xmin=0.1*u.kpc, xmax=2*u.kpc),
         'central_density':img.priors.FlatPrior(xmin=1e-6*u.cm**-3, xmax=1e-4*u.cm**-3),
         'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
-        B_factory.active_paramters = ('b_arm_1','b_arm_2','b_arm_3',' b_arm_4','b_arm_5','b_arm_6','b_arm_7','b_ring')
-        B_facotry.priors = {        
+        B_factory.active_parameters = ('b_arm_1','b_arm_2','b_arm_3',' b_arm_4','b_arm_5','b_arm_6','b_arm_7','b_ring')
+        B_factory.priors = {        
         'b_arm_1':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
         'b_arm_2':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
         'b_arm_3':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
@@ -316,7 +333,7 @@ def JF12constindexCREprofile_setup(samplecondition=None):
 
 
 # pipeline controller
-def turbulentJF12CREmodelretrieval_setup():
+def turbulentJF12CREprofile_setup():
 
     # Produce empty data format
     T     = np.zeros(Ndata)*dunit # placeholder
@@ -355,20 +372,35 @@ def turbulentJF12CREmodelretrieval_setup():
                                                          'central_density':1e-5*u.cm**-3,
                                                          'spectral_index':-3})
     
+
+    # Choose fixed JF12 field and possible active parameters
+    Bfield1   = WrappedJF12(grid=cartesian_grid)
+    B_factory = img.fields.FieldFactory(field_class=Bfield1, grid=cartesian_grid)
+    B_factory.active_parameters = ('b_arm_1',)
+    B_factory.priors = {'b_arm_1':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss)}
+    
     # Do sampling runs with different simulated datasets
     summary_t = []
     samples_t = []
-    tlist     = []
-    for t in chooseturb:
-        
-        Bfield = WrappedJF12(grid=cartesian_grid)
-        # add turbulence
-        
+    turbscale = [0.5]#,1.0,1.5]
+    Barray    = load_JF12rnd()
+    for beta in turbscale:
+
+        # Clear previous pipeline
+        os.system("rm -r runs/mockdata/*")
+
+        # Setup magnetic field
+        Bfield2 = ArrayMagneticField(grid=cartesian_grid,
+                                        array_field=Barray*u.microgauss,
+                                        scale=beta,
+                                        name='BrndJF12')
+        Btotal = FieldAdder(grid=cartesian_grid, summand_1=Bfield1, summand_2=Bfield2)
+
         # Produce simulated dataset with noise
-        mock_data = produce_mock_data(field_list=[cre,Bfield], mea=mea, config=config, noise=0.01)
+        mock_data = produce_mock_data(field_list=[cre,Btotal], mea=mea, config=config, noise=0.01)
         sim_data = {'brightness':mock_data,'err':mock_data/10,'lat':config['lat'],'lon':config['lon']}
         sim_mea  = fill_imagine_dataset(sim_data)
-    
+
         # Setup simulator
         los_simulator = SpectralSynchrotronEmissivitySimulator(sim_mea, config)
         
@@ -376,8 +408,7 @@ def turbulentJF12CREmodelretrieval_setup():
         likelihood = img.likelihoods.SimpleLikelihood(sim_mea)    
         
         # Setup field factories and their active parameters
-        B_factory   = img.fields.FieldFactory(field_class = Bfield, grid=config['grid'])
-        CRE_factory = img.fields.FieldFactory(field_class = cre, grid=config['grid']) 
+        CRE_factory = img.fields.FieldFactory(field_class=cre, grid=config['grid']) 
         CRE_factory.active_parameters = ('spectral_index',)
         CRE_factory.priors = {'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
         factory_list = [B_factory, CRE_factory]
@@ -394,10 +425,8 @@ def turbulentJF12CREmodelretrieval_setup():
         
         summary_t.append(pipeline.posterior_summary)
         samples_t.append(pipeline.samples)
-        tlist.append(t)
-    
-    return tlist, samples_t, summary_t
-
+    return turbscale, samples_t, summary_t
+#results = turbulentJF12CREprofile_setup()
 
 # pipeline controller
 def JF12spectralhardeningCREprofile_setup():
@@ -433,7 +462,6 @@ def JF12spectralhardeningCREprofile_setup():
         parameters={'soft_index':-4, 'hard_index':-2.5, 'slope':1*u.kpc**-1})
     Bfield = WrappedJF12(grid=cartesian_grid)
 
-    
     # Setup observing configuration
     observer = np.array([-8.5,0,0])*u.kpc
     dist_err = hIIdist/5
@@ -489,12 +517,14 @@ def JF12spectralhardeningCREprofile_setup():
 
 
 #%% Choose which setup you want to run
-
+#===================================================================================
 #results = simple_pipeline()
 #results = JF12constindexCREprofile_setup()
 #results = JF12spectralhardeningCREprofile_setup()
+#results = turbulentJF12CREprofile_setup()
 
 #%% Results 3.1 Computational performance
+#===================================================================================
 
 def get_ndatavstime():
     """Save time testing results in binary np array"""
@@ -555,7 +585,6 @@ def plot_resolutionvstime():
     plt.savefig(figpath+'resolutionvstime_relavent.png')
 #plot_resolutionvstime()
 
-
 def get_noisevsevidence():
     rel_brightness_error = 10**np.linspace(-2,0,20)
     reallogZ  = []
@@ -602,7 +631,7 @@ def plot_noisevsevidence():
 
 
 #%% Plotting routines for parameter inference runs
-
+#===================================================================================
 import seaborn as sns
 import pandas as pd
 
@@ -627,8 +656,9 @@ def plot_seaborn_corner(samples, colnames, fname):
 
 
 #%% Results 4.2 Sampeling parameters of JF12 + Const-Index CRE profile
+#=======================================================================================
 
-# Just retrieve spectral index
+# ======= Just retrieve spectral index ======= 
 def get_samples_alpha():
     os.system("rm -r runs/mockdata/*")
     samples, summary = JF12constindexCREprofile_setup(samplecondition = 'alpha')
@@ -648,7 +678,7 @@ def plot_samples_alpha():
 #plot_samples_alpha()
 
 
-# Retrieve all CRE model parameters at once
+# ======= Retrieve all CRE model parameters at once ======= 
 def get_samples_CRE():
     os.system("rm -r runs/mockdata/*")
     samples, summary = JF12constindexCREprofile_setup(samplecondition = 'allCRE')
@@ -670,7 +700,7 @@ def plot_samples_CRE():
 #plot_samples_CRE()
 
 
-# Retrieve all B amplitudes for JF12 and all CRE model parameters at once
+# ======= Retrieve all B amplitudes for JF12 and all CRE model parameters at once ======= 
 def get_samples_JF12andCRE():
     os.system("rm -r runs/mockdata/*")
     samples, summary = JF12constindexCREprofile_setup(samplecondition = 'Bamp+allCRE')
@@ -693,6 +723,24 @@ def plot_samples_JF12andCRE():
 #plot_samples_JF12andCRE()
 
 
+# ======= Investigate turbulent setup ======= 
+def get_samples_turbulence():
+    os.system("rm -r runs/mockdata/*")
+    beta, samples_t, summary_t = turbulentJF12CREprofile_setup()
+    with open(logdir+'samples_turbulence.npy', 'wb') as f:
+        np.save(f, summary)
+        np.save(f, samples)
+#get_samples_turbulence()
+
+def plot_samples_turbulence():
+    with open(logdir+'samples_turbulence.npy', 'rb') as f:
+        summary_t = np.load(f, allow_pickle=True)
+        samples_t = np.load(f)
+    # process data
+    # make several line+scatter plots for samples of parameter_x vs beta
+    # line = b0 + beta*b0_rand
+    # samples = samples column x for each beta
+#plot_samples_turbulence()
 
 
 
