@@ -40,6 +40,13 @@ head = ['GLON','GLAT','Dist','e_Dist','n_T','eps','e_eps']
 #print("We have {} Hii regions!".format(len(hiidata['Dist'])))
 
 
+#%% Determine reasonable integration box
+#===========================================================================
+# We know rdist max ~ 17.5 kpc -> xy minmax +-20kpc
+# We know zdist max ~  0.5 kpc ->  z minmax +- 2kpc
+# Resolution will depend on turbulent scale trying (40,40,10)
+
+
 #%% Plotting functions
 #===========================================================================
 
@@ -53,7 +60,7 @@ def plot_relative_temperror():
     plt.xlabel("Relative error (e_T/T)")
     plt.tight_layout()
     plt.savefig(figpath+'relativeTerr.png')
-plot_relative_temperror()
+#plot_relative_temperror()
 
 def plot_rdist():
     hiidist = hiidata['Dist'] * u.kpc
@@ -63,7 +70,7 @@ def plot_rdist():
     plt.xlabel("Distance (kpc)")
     plt.tight_layout()
     plt.savefig(figpath+'rdist.png')
-plot_rdist()
+#plot_rdist()
 
 def plot_relative_disterr():
     hiidist   = hiidata['Dist'] * u.kpc
@@ -75,7 +82,7 @@ def plot_relative_disterr():
     plt.xlabel("Relative error (e_Dist/Dist)")
     plt.tight_layout()
     plt.savefig(figpath+'relativedisterr.png')
-plot_relative_disterr()
+#plot_relative_disterr()
 
 def plot_zdist():
     hiidist = hiidata['Dist'] * u.kpc
@@ -87,7 +94,7 @@ def plot_zdist():
     plt.xlabel("Z-hight (kpc)")
     plt.tight_layout()
     plt.savefig(figpath+'zdist.png')
-plot_zdist()
+#plot_zdist()
 
 
 

@@ -13,7 +13,7 @@ import imagine as img
 from imagine.simulators.synchrotronlos import SpectralSynchrotronEmissivitySimulator
 from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12
 from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12Factory
-from imagine.fields.field_utility import FieldAdder
+from imagine.fields.field_utility import MagneticFieldAdder
 from imagine.fields.field_utility import ArrayMagneticField
 
 # Utility
@@ -394,7 +394,7 @@ def turbulentJF12CREprofile_setup():
                                         array_field=Barray*u.microgauss,
                                         scale=beta,
                                         name='BrndJF12')
-        Btotal = FieldAdder(grid=cartesian_grid, summand_1=Bfield1, summand_2=Bfield2)
+        Btotal = MagneticFieldAdder(grid=cartesian_grid, summand_1=Bfield1, summand_2=Bfield2)
 
         # Produce simulated dataset with noise
         mock_data = produce_mock_data(field_list=[cre,Btotal], mea=mea, config=config, noise=0.01)

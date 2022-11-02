@@ -4,9 +4,9 @@
 import imagine as img
 from imagine.simulators.synchrotronlos import SpectralSynchrotronEmissivitySimulator
 from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12
-from imagine.fields.cwrapped.wrappedjf12 import WrappedJF12Factory
-from imagine.fields.field_utility import FieldAdder
+from imagine.fields.field_utility import MagneticFieldAdder
 from imagine.fields.field_utility import ArrayMagneticField
+from imagine.fields.field_factory import FieldFactory
 
 # Utility
 import os
@@ -29,6 +29,27 @@ MHz   = 1e6 / u.s
 Ndata = 100
 observing_frequency = 90*MHz
 dunit = u.K/u.kpc
+
+
+#===========================================================================
+
+def test_JF12_Field():
+    xmax = 15*u.kpc
+    ymax = 15*u.kpc
+    zmax =  2*u.kpc
+    cartesian_grid = img.fields.UniformGrid(
+        box=[[-xmax, xmax],
+             [-ymax, ymax],
+             [-zmax, zmax]],
+        resolution = [3,3,3])
+
+    Bfield = WrappedJF12(grid=cartesian_grid)
+    print("\nRegular JF12Field()")
+    print(Bfield.get_data()) # call to compute_field()
+    print(Bfield.parameter_names)
+
+#test_JF12_Field()
+
 
 #===========================================================================
 
@@ -64,10 +85,102 @@ def get_label_FB(Ndata):
     np.random.shuffle(FB) 
     return FB
 
+def load_JF12rnd(shape=(30,30,30,3)):
+    with open(fieldpath+"brnd.bin", "rb") as f:
+        arr = f.read()
+        arr = struct.unpack("d"*(len(arr)//8), arr[:])
+        arr = np.asarray(arr).reshape(shape)
+    return arr
+
+#===========================================================================
+
+def pipeline_debugger():
+    print("\n===Running pipeline_debugger ===")
+
+    # Produce empty data format
+    T     = np.zeros(Ndata)*dunit # placeholder
+    T_err = np.zeros(Ndata)*dunit # placeholder
+    xmax = 15*u.kpc
+    ymax = 15*u.kpc
+    zmax =  2*u.kpc
+    x = randrange(-0.9*xmax,0.9*xmax,Ndata)
+    y = randrange(-0.9*ymax,0.9*ymax,Ndata)
+    z = randrange(-0.9*zmax,0.9*zmax,Ndata)
+    hIIdist, lat, lon = cartesian_to_spherical(x+8.5*u.kpc,y,z)
+    fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
+    mea       = fill_imagine_dataset(data=fake_data)
+    
+    # Setup the Galactic field models
+    cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
+                                                 [-ymax, ymax],
+                                                 [-zmax, zmax]],
+                                                 resolution = [30,30,30]) # skipping x=y=0
+    cre = img.fields.PowerlawCosmicRayElectrons(grid=cartesian_grid,
+                                            parameters = {'scale_radius':10*u.kpc,
+                                                         'scale_height':1*u.kpc,
+                                                         'central_density':1e-5*u.cm**-3,
+                                                         'spectral_index':-3})
+    
+    print("Defining WrappedJF12")
+    Bfield1 = WrappedJF12(
+        grid = cartesian_grid,
+        parameters = {'b_arm_1': .1, 'b_arm_2': 3.0, 'b_arm_3': -.9, 'b_arm_4': -.8, 'b_arm_5': -2.,
+                          'b_arm_6': -4.2, 'b_arm_7': .0, 'b_ring': .1, 'h_disk': .4, 'w_disk': .27,
+                          'Bn': 1.4, 'Bs': -1.1, 'rn': 9.22, 'rs': 16.7, 'wh': .2, 'z0': 5.3, 'B0_X': 4.6,
+                          'Xtheta_const': 49, 'rpc_X': 4.8, 'r0_X': 2.9, })
+
+    #generate_JF12rnd(grid=cartesian_grid) # calls Hammurabi
+    Barray  = load_JF12rnd()
+    beta    = 1.0
+    Bfield2 = ArrayMagneticField(grid=cartesian_grid,
+                                parameters = {'array_field_amplitude':beta, 'array_field':Barray*u.microgauss})
+
+    Btotal = MagneticFieldAdder(grid=cartesian_grid,
+                                field_1=WrappedJF12,
+                                field_2=ArrayMagneticField,
+                                parameters = {  'array_field_amplitude':beta,
+                                                'b_arm_1': .1, 'b_arm_2': 3.0, 'b_arm_3': -.9, 'b_arm_4': -.8, 'b_arm_5': -2.,
+                                                'b_arm_6': -4.2, 'b_arm_7': .0, 'b_ring': .1, 'h_disk': .4, 'w_disk': .27,
+                                                'Bn': 1.4, 'Bs': -1.1, 'rn': 9.22, 'rs': 16.7, 'wh': .2, 'z0': 5.3, 'B0_X': 4.6,
+                                                'Xtheta_const': 49, 'rpc_X': 4.8, 'r0_X': 2.9, 
+                                                'array_field': Barray*u.microgauss})
+
+    Bdata = Btotal.get_data()
+    #print("Field data: \n", Bdata)
+    print("Parameter_names:\n", Btotal.parameter_names)
+    print("Total field name: ", Btotal.NAME)
+    
+   
+    B_factory = FieldFactory(field_class = Btotal, grid=cartesian_grid)
+    B_factory.active_parameters = ('b_arm_1','b_arm_2')
+    B_factory.priors = {        
+    'b_arm_1':img.priors.FlatPrior(xmin=0, xmax=10),
+    'b_arm_2':img.priors.FlatPrior(xmin=0, xmax=10),
+    }
+
+    print("\n=== Investigating NAME ===")
+    print(isinstance(B_factory, FieldFactory))
+    print(B_factory.default_parameters)
+    print(B_factory.active_parameters)
+    print(B_factory.field_class)
+    print(B_factory.field_class.NAME)
+    print(B_factory.field_name)
+    
+    print("\n=== These should be the same ===")
+    print(Btotal.NAME) # the way a name of a field is accesed
+    print(B_factory.field_name) # the way the name of a field in a factory is accesed
+    
+    return
+
+#pipeline_debugger()
+
 #===========================================================================
 
 # pipeline controller
 def JF12pipeline():
+
+    # Remove old pipeline
+    os.system("rm -r runs/mockdata/*")
     
     # Produce empty data format
     T     = np.zeros(Ndata)*dunit # placeholder
@@ -92,7 +205,31 @@ def JF12pipeline():
                                                          'scale_height':1*u.kpc,
                                                          'central_density':1e-5*u.cm**-3,
                                                          'spectral_index':-3})
-    Bfield = WrappedJF12(grid=cartesian_grid)
+    
+    print("Defining WrappedJF12")
+    Bfield1 = WrappedJF12(
+        grid = cartesian_grid,
+        parameters = {'b_arm_1': .1, 'b_arm_2': 3.0, 'b_arm_3': -.9, 'b_arm_4': -.8, 'b_arm_5': -2.,
+                          'b_arm_6': -4.2, 'b_arm_7': .0, 'b_ring': .1, 'h_disk': .4, 'w_disk': .27,
+                          'Bn': 1.4, 'Bs': -1.1, 'rn': 9.22, 'rs': 16.7, 'wh': .2, 'z0': 5.3, 'B0_X': 4.6,
+                          'Xtheta_const': 49, 'rpc_X': 4.8, 'r0_X': 2.9, })
+
+    #generate_JF12rnd(grid=cartesian_grid) # calls Hammurabi
+    Barray  = load_JF12rnd()
+    beta    = 1.0
+    Bfield2 = ArrayMagneticField(grid=cartesian_grid,
+                            parameters = {'array_field_amplitude':beta,
+                                          'array_field':Barray*u.microgauss})
+
+    Btotal = MagneticFieldAdder(grid=cartesian_grid,
+                                field_1=WrappedJF12,
+                                field_2=ArrayMagneticField,
+                                parameters = {  'array_field_amplitude':beta,
+                                                'b_arm_1': .1, 'b_arm_2': 3.0, 'b_arm_3': -.9, 'b_arm_4': -.8, 'b_arm_5': -2.,
+                                                'b_arm_6': -4.2, 'b_arm_7': .0, 'b_ring': .1, 'h_disk': .4, 'w_disk': .27,
+                                                'Bn': 1.4, 'Bs': -1.1, 'rn': 9.22, 'rs': 16.7, 'wh': .2, 'z0': 5.3, 'B0_X': 4.6,
+                                                'Xtheta_const': 49, 'rpc_X': 4.8, 'r0_X': 2.9, 
+                                                'array_field': Barray*u.microgauss})
 
     # Setup observing configuration
     observer = np.array([-8.5,0,0])*u.kpc
@@ -107,7 +244,7 @@ def JF12pipeline():
               'FB':FB}
     
     # Produce simulated dataset with noise
-    mock_data = produce_mock_data(field_list=[cre,Bfield], mea=mea, config=config, noise=0.01)
+    mock_data = produce_mock_data(field_list=[cre,Btotal], mea=mea, config=config, noise=0.01)
     sim_data = {'brightness':mock_data,'err':mock_data/10,'lat':config['lat'],'lon':config['lon']}
     sim_mea  = fill_imagine_dataset(sim_data)
 
@@ -119,15 +256,23 @@ def JF12pipeline():
     
     # Setup field factories and their active parameters
     CRE_factory = img.fields.FieldFactory(field_class = cre, grid=cartesian_grid) 
-    B_factory   = WrappedJF12Factory(grid=cartesian_grid)
+    
+    #B_factory   = WrappedJF12Factory(grid=cartesian_grid)
+    B_factory   = img.fields.FieldFactory(
+        field_class = Btotal,
+        grid = cartesian_grid,
+        field_kwargs = {'field_1':WrappedJF12, 'field_2':ArrayMagneticField})
+    
     """
-    B_factory   = img.fields.FieldFactory(field_class = Bfield, grid=config['grid'])
-    B_factory.active_parameters = ('b_arm_1','b_arm_2')
+    B_factory.active_parameters = ('array_field_amplitude',)
+    B_factory.priors = {'array_field_amplitude':img.priors.FlatPrior(xmin=0, xmax=10)}
+    
+    """
+    B_factory.active_parameters = ('b_arm_1',)
     B_factory.priors = {        
-    'b_arm_1':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
-    'b_arm_2':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss),
+    'b_arm_1':img.priors.FlatPrior(xmin=0, xmax=10)
     }
-    """
+    
     factory_list = [B_factory, CRE_factory]
 
     # Setup final pipeline
@@ -143,8 +288,6 @@ def JF12pipeline():
     summary = pipeline.posterior_summary
     samples = pipeline.samples
     
-    return samples, summary
+    return #samples, summary
 
-# Clear previous pipeline
-os.system("rm -r runs/mockdata/*")
 JF12pipeline()
