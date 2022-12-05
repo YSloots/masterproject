@@ -75,8 +75,8 @@ def get_label_FB(Ndata):
     np.random.shuffle(FB) 
     return FB
 
-def load_JF12rnd(shape=(30,30,30,3)):
-    with open(fieldpath+"brnd.bin", "rb") as f:
+def load_JF12rnd(label, shape=(40,40,10,3)):
+    with open(fieldpath+"brnd_{}.bin".format(int(label)), "rb") as f:
         arr = f.read()
         arr = struct.unpack("d"*(len(arr)//8), arr[:])
         arr = np.asarray(arr).reshape(shape)
@@ -238,8 +238,8 @@ def JF12constindexCREprofile_setup(samplecondition=None):
     # Produce empty data format
     T     = np.zeros(Ndata)*dunit # placeholder
     T_err = np.zeros(Ndata)*dunit # placeholder
-    xmax = 15*u.kpc
-    ymax = 15*u.kpc
+    xmax = 20*u.kpc
+    ymax = 20*u.kpc
     zmax =  2*u.kpc
     x = randrange(-0.9*xmax,0.9*xmax,Ndata)
     y = randrange(-0.9*ymax,0.9*ymax,Ndata)
@@ -253,7 +253,7 @@ def JF12constindexCREprofile_setup(samplecondition=None):
     cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
                                                  [-ymax, ymax],
                                                  [-zmax, zmax]],
-                                                 resolution = [30,30,30]) # skipping x=y=0
+                                                 resolution = [40,40,10]) # skipping x=y=0
     cre = img.fields.PowerlawCosmicRayElectrons(grid=cartesian_grid,
                                             parameters = {'scale_radius':10*u.kpc,
                                                          'scale_height':1*u.kpc,
@@ -333,13 +333,13 @@ def JF12constindexCREprofile_setup(samplecondition=None):
 
 
 # pipeline controller
-def turbulentJF12CREprofile_setup():
+def turbulentJF12CREprofile_setup(turbscale, Brnd_label):
 
     # Produce empty data format
     T     = np.zeros(Ndata)*dunit # placeholder
     T_err = np.zeros(Ndata)*dunit # placeholder
-    xmax = 15*u.kpc
-    ymax = 15*u.kpc
+    xmax = 20*u.kpc
+    ymax = 20*u.kpc
     zmax =  2*u.kpc
     x = randrange(-0.9*xmax,0.9*xmax,Ndata)
     y = randrange(-0.9*ymax,0.9*ymax,Ndata)
@@ -347,13 +347,12 @@ def turbulentJF12CREprofile_setup():
     hIIdist, lat, lon = cartesian_to_spherical(x+8.5*u.kpc,y,z)
     fake_data = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
     mea       = fill_imagine_dataset(data=fake_data)
-
     
     # Setup the Galactic field models
     cartesian_grid = img.fields.UniformGrid(box=[[-xmax, xmax],
                                                  [-ymax, ymax],
                                                  [-zmax, zmax]],
-                                                 resolution = [30,30,30]) # skipping x=y=0
+                                                 resolution = [40,40,10]) # skipping x=y=0
     # Setup observing configuration                                          
     observer = np.array([-8.5,0,0])*u.kpc
     dist_err = hIIdist/5
@@ -371,30 +370,24 @@ def turbulentJF12CREprofile_setup():
                                                          'scale_height':1*u.kpc,
                                                          'central_density':1e-5*u.cm**-3,
                                                          'spectral_index':-3})
-    
 
-    # Choose fixed JF12 field and possible active parameters
-    Bfield1   = WrappedJF12(grid=cartesian_grid)
-    B_factory = img.fields.FieldFactory(field_class=Bfield1, grid=cartesian_grid)
-    B_factory.active_parameters = ('b_arm_1',)
-    B_factory.priors = {'b_arm_1':img.priors.FlatPrior(xmin=0*u.microgauss, xmax=10*u.microgauss)}
-    
     # Do sampling runs with different simulated datasets
-    summary_t = []
-    samples_t = []
-    turbscale = [0.5]#,1.0,1.5]
-    Barray    = load_JF12rnd()
+    results_dictionary = {'turbscale':turbscale}
     for beta in turbscale:
 
         # Clear previous pipeline
         os.system("rm -r runs/mockdata/*")
 
         # Setup magnetic field
-        Bfield2 = ArrayMagneticField(grid=cartesian_grid,
-                                        array_field=Barray*u.microgauss,
-                                        scale=beta,
-                                        name='BrndJF12')
-        Btotal = MagneticFieldAdder(grid=cartesian_grid, summand_1=Bfield1, summand_2=Bfield2)
+        Barray = load_JF12rnd(label=Brnd_label)
+        Btotal = MagneticFieldAdder(grid=cartesian_grid,
+                                    field_1=WrappedJF12,
+                                    field_2=ArrayMagneticField,
+                                    parameters = {  'b_arm_1': .1, 'b_arm_2': 3.0, 'b_arm_3': -.9, 'b_arm_4': -.8, 'b_arm_5': -2.,
+                                                    'b_arm_6': -4.2, 'b_arm_7': .0, 'b_ring': .1, 'h_disk': .4, 'w_disk': .27,
+                                                    'Bn': 1.4, 'Bs': -1.1, 'rn': 9.22, 'rs': 16.7, 'wh': .2, 'z0': 5.3, 'B0_X': 4.6,
+                                                    'Xtheta_const': 49, 'rpc_X': 4.8, 'r0_X': 2.9, 
+                                                    'array_field_amplitude':beta, 'array_field': Barray*1e6*u.microgauss})
 
         # Produce simulated dataset with noise
         mock_data = produce_mock_data(field_list=[cre,Btotal], mea=mea, config=config, noise=0.01)
@@ -408,9 +401,18 @@ def turbulentJF12CREprofile_setup():
         likelihood = img.likelihoods.SimpleLikelihood(sim_mea)    
         
         # Setup field factories and their active parameters
+        B_factory = WrappedJF12Factory(grid=cartesian_grid)
+        #B_factory   = img.fields.FieldFactory(
+        #    field_class = Btotal,
+        #    grid = cartesian_grid,
+        #    field_kwargs = {'field_1':WrappedJF12, 'field_2':ArrayMagneticField})
+        B_factory.active_parameters = ('b_arm_2','b_arm_6','b_ring')
+        B_factory.priors = {        
+        'b_arm_2':img.priors.FlatPrior(xmin=1.0, xmax=5.0),
+        'b_arm_6':img.priors.FlatPrior(xmin=-5.2, xmax=-2.2),
+        'b_ring':img.priors.FlatPrior(xmin=-1.9, xmax=2.1)
+        }
         CRE_factory = img.fields.FieldFactory(field_class=cre, grid=config['grid']) 
-        CRE_factory.active_parameters = ('spectral_index',)
-        CRE_factory.priors = {'spectral_index':img.priors.FlatPrior(xmin=-4, xmax=-2.1)}
         factory_list = [B_factory, CRE_factory]
         
         # Setup final pipeline
@@ -418,15 +420,16 @@ def turbulentJF12CREprofile_setup():
                                                     run_directory = rundir,
                                                     factory_list  = factory_list,
                                                     likelihood    = likelihood)
-        pipeline.sampling_controllers = {'evidence_tolerance': 0.5, 'n_live_points': 200}
+        pipeline.sampling_controllers = {'evidence_tolerance': 0.9, 'n_live_points': 200}
         
         # Run!
         results = pipeline()
-        
-        summary_t.append(pipeline.posterior_summary)
-        samples_t.append(pipeline.samples)
-    return turbscale, samples_t, summary_t
-#results = turbulentJF12CREprofile_setup()
+
+        results_dictionary['summary_{}'.format(beta)] = pipeline.posterior_summary
+        results_dictionary['samples_{}'.format(beta)] = pipeline.samples
+
+    return results_dictionary
+
 
 # pipeline controller
 def JF12spectralhardeningCREprofile_setup():
@@ -723,25 +726,62 @@ def plot_samples_JF12andCRE():
 #plot_samples_JF12andCRE()
 
 
-# ======= Investigate turbulent setup ======= 
-def get_samples_turbulence():
-    os.system("rm -r runs/mockdata/*")
-    beta, samples_t, summary_t = turbulentJF12CREprofile_setup()
-    with open(logdir+'samples_turbulence.npy', 'wb') as f:
-        np.save(f, summary)
-        np.save(f, samples)
-#get_samples_turbulence()
+# ======= Investigate turbulent setup =======
 
-def plot_samples_turbulence():
-    with open(logdir+'samples_turbulence.npy', 'rb') as f:
-        summary_t = np.load(f, allow_pickle=True)
-        samples_t = np.load(f)
-    # process data
-    # make several line+scatter plots for samples of parameter_x vs beta
-    # line = b0 + beta*b0_rand
-    # samples = samples column x for each beta
-#plot_samples_turbulence()
+# Convenience functions
+def empty_dictionary(parameter_names):
+    results = {}
+    for pname in parameter_names:
+        results[pname+'_mean'] = []
+        results[pname+'_std'] = [] 
+    return results
+def fill_dictionary(results_dictionary):
+    parameter_names = results_dictionary['samples_0.0'].colnames
+    tscale          = results_dictionary['turbscale']
+    results         = empty_dictionary(parameter_names)
+    for tv in tscale:
+        y = []
+        for row in results_dictionary['samples_{}'.format(tv)]:
+            y.append(list(row))
+        y = np.array(y)
+        meany = np.mean(y,axis=0)
+        stdy  = np.std(y,axis=0)
+        for i,pname in enumerate(parameter_names):
+            results[pname+'_mean'].append(meany[i])
+            results[pname+'_std'].append(stdy[i])
+    return results
 
+# Generate samples
+def get_samples_turbulence(Brnd_label):
+    print("\nStarting turbulent inference with Brnd instance ", Brnd_label)
+    turbulent_scale    = np.linspace(0,1.5,16)
+    results_dictionary = turbulentJF12CREprofile_setup(turbscale=turbulent_scale,
+                                                       Brnd_label=Brnd_label)
+    np.save(logdir+'samples_turbulence{}.npy'.format(Brnd_label), results_dictionary)
+#get_samples_turbulence(Brnd_label=1)
 
+# Plot results
+def plot_samples_turbulence(Brnd_label):
+    data    = np.load(logdir+'samples_turbulence{}.npy'.format(Brnd_label), allow_pickle=True).item()
+    results = fill_dictionary(results_dictionary=data) # custom formatted dictionary
+    plt.close("all")
+    pnames = data['samples_0.0'].colnames # samples_0.0 always should be there
+    tscale = data['turbscale']
+    fig, axes = plt.subplots(nrows=1, ncols=len(pnames), figsize=(5*(len(pnames)+1),5), sharey = False)
+    for ax,pname in zip(axes.flat,pnames):
+        meany = np.array(results[pname+'_mean'])
+        stdy  = np.array(results[pname+'_std'])
+        ax.plot(tscale,meany)
+        ax.fill_between(tscale, meany-stdy, meany+stdy, alpha=0.2)
+        ax.set_xlabel('turbulent scale (beta)')
+        ax.set_ylabel(pname)
+    plt.suptitle('Nested sampling results, Brnd instance {}'.format(Brnd_label),fontsize=20)
+    plt.savefig(figpath+'samples_turbulence{}.png'.format(Brnd_label))
+#plot_samples_turbulence(Brnd_label=1)
 
+def do_all_turbulent_models():
+    for Brnd_label in [1,2,3,4,5]:
+        get_samples_turbulence(Brnd_label)
+        plot_samples_turbulence(Brnd_label)
+#do_all_turbulent_models()
 
