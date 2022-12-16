@@ -1,13 +1,13 @@
-Nested Sampling Global Log-Evidence           :    0.882899645896611958E+02  +/-    0.126465759190601906E+00
-Nested Importance Sampling Global Log-Evidence:    0.882754921182525578E+02  +/-    0.322243150025367381E-01
+Nested Sampling Global Log-Evidence           :   -0.886140011483639391E+05  +/-    0.148005051503235896E+00
+Nested Importance Sampling Global Log-Evidence:   -0.886141505998470675E+05  +/-    0.325472838599238576E-01
 
 Dim No.       Mean        Sigma
-   1    0.166536653749027125E+00    0.109237208872758368E+00
+   1    0.562240664980743077E+01    0.260016057055768648E-01
 
 Maximum Likelihood Parameters
 Dim No.        Parameter
-   1    0.981042035475788443E-01
+   1    0.562154532243149596E+01
 
 MAP Parameters
 Dim No.        Parameter
-   1    0.209137810419606385E+00
+   1    0.559445277267493690E+01

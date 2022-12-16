@@ -77,7 +77,7 @@ def plot_relative_temperror():
     plt.xlabel("Relative error (e_T/T)")
     plt.tight_layout()
     plt.savefig(figpath+'relativeTerr.png')
-plot_relative_temperror()
+#plot_relative_temperror()
 
 def plot_rdist():
     hiidist = hiidata['Dist'] * u.kpc
@@ -87,7 +87,7 @@ def plot_rdist():
     plt.xlabel("Distance (kpc)")
     plt.tight_layout()
     plt.savefig(figpath+'rdist.png')
-plot_rdist()
+#plot_rdist()
 
 def plot_relative_disterr():
     hiidist   = hiidata['Dist'] * u.kpc
@@ -99,19 +99,26 @@ def plot_relative_disterr():
     plt.xlabel("Relative error (e_Dist/Dist)")
     plt.tight_layout()
     plt.savefig(figpath+'relativedisterr.png')
-plot_relative_disterr()
+#plot_relative_disterr()
+
+from scipy.stats import norm as gaussian
 
 def plot_zdist():
     hiidist = hiidata['Dist'] * u.kpc
     lat     = hiidata['GLAT'] * tau/360 * u.rad
     z       = np.sin(lat)*hiidist
+    zgrid   = np.linspace(np.min(z),np.max(z),200)
+    sigmas  = np.array([0.25,0.5,1,1.5])*np.std(z)
     plt.close('all')
-    sns.displot(z,bins=30,kde=True)
+    sns.displot(z,bins=30,stat='density')
+    for s in sigmas:
+        plt.plot(zgrid, gaussian.pdf(zgrid,0,s), label='sigma_z={0:.2}'.format(s))
+    plt.legend()
     plt.title("HII-region Galactic z-hight distribution")
     plt.xlabel("Z-hight (kpc)")
     plt.tight_layout()
-    plt.savefig(figpath+'zdist.png')
-plot_zdist()
+    plt.savefig(figpath+'zdist_extra.png')
+#plot_zdist()
 
 
 def plot_losdist():
@@ -162,11 +169,13 @@ def plot_losdist():
     plt.xlabel("Distance (kpc)")
     plt.tight_layout()
     plt.savefig(figpath+'losdist.png')
-plot_losdist()
+#plot_losdist()
 
 
 #%% Generate typical and tunable simulated dataset
 #===========================================================================
+
+from scipy.stats import truncnorm
 
 def generate_rdist():
     hiidist = hiidata['Dist'] * u.kpc
@@ -181,3 +190,22 @@ def generate_rdist():
     plt.savefig(figpath+'generated_rdist.png')
 #generate_rdist()
 
+def generate_zdist():
+    hiidist = hiidata['Dist'] * u.kpc
+    lat     = hiidata['GLAT'] * tau/360 * u.rad
+    z       = np.sin(lat)*hiidist
+
+    stdz  = np.std(z)
+    meanz = np.mean(z)
+    print(stdz, meanz)
+    zmax  = 2*u.kpc
+    z_gen = truncnorm(a=-zmax/stdz, b=zmax/stdz, scale=stdz/u.kpc).rvs(100)*u.kpc
+    z_gen[0]  = np.min(z)
+    z_gen[-1] = np.max(z)
+    plt.close('all')
+    sns.displot(z_gen,bins=30,kde=True)
+    plt.title("Generated HII-region z coordinates")
+    plt.xlabel("Z Distance (kpc)")
+    plt.tight_layout()
+    plt.savefig(figpath+'generated_zdist.png')
+#generate_zdist()
