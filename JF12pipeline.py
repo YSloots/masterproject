@@ -71,8 +71,9 @@ def produce_mock_data(field_list, mea, config, noise=0.01):
     simulation = test_sim(field_list)
     key = ('average_los_brightness', 0.09000000000000001, 'tab', None)
     sim_brightness = simulation[key].data[0] * simulation[key].unit
-    sim_brightness += np.random.normal(loc=0, scale=noise*sim_brightness, size=Ndata)*simulation[key].unit
-    return sim_brightness
+    error = np.random.normal(loc=0, scale=noise*sim_brightness, size=Ndata)*simulation[key].unit
+    sim_brightness += error
+    return sim_brightness, error
 
 def randrange(minvalue,maxvalue,Nvalues):
     """Returns uniform random values bewteen min and max"""
@@ -244,8 +245,9 @@ def JF12pipeline_MagneticFieldAdder():
               'FB':FB}
     
     # Produce simulated dataset with noise
-    mock_data = produce_mock_data(field_list=[cre,Btotal], mea=mea, config=config, noise=0.01)
-    sim_data = {'brightness':mock_data,'err':mock_data/10,'lat':config['lat'],'lon':config['lon']}
+    noise = 0.01
+    mock_data, error = produce_mock_data(field_list=[cre,Btotal], mea=mea, config=config, noise=noise)
+    sim_data = {'brightness':mock_data,'err':error,'lat':config['lat'],'lon':config['lon']}
     sim_mea  = fill_imagine_dataset(sim_data)
 
     # Setup simulator
@@ -268,9 +270,9 @@ def JF12pipeline_MagneticFieldAdder():
     B_factory.priors = {'array_field_amplitude':img.priors.FlatPrior(xmin=0, xmax=10)}
     
     """
-    B_factory.active_parameters = ('b_arm_1',)
+    B_factory.active_parameters = ('b_arm_2',)
     B_factory.priors = {        
-    'b_arm_1':img.priors.FlatPrior(xmin=0, xmax=10)
+    'b_arm_2':img.priors.FlatPrior(xmin=0, xmax=10)
     }
     
     factory_list = [B_factory, CRE_factory]
@@ -352,8 +354,8 @@ def JF12pipeline_basic():
               'FB':FB}
     
     # Produce simulated dataset with noise
-    mock_data = produce_mock_data(field_list=[cre,Bfield1,Bfield2], mea=mea, config=config, noise=0.01)
-    sim_data = {'brightness':mock_data,'err':mock_data/10,'lat':config['lat'],'lon':config['lon']}
+    mock_data, error= produce_mock_data(field_list=[cre,Bfield1,Bfield2], mea=mea, config=config, noise=0.01)
+    sim_data = {'brightness':mock_data,'err':error,'lat':config['lat'],'lon':config['lon']}
     sim_mea  = fill_imagine_dataset(sim_data)
 
     # Setup simulator
@@ -366,9 +368,9 @@ def JF12pipeline_basic():
     CRE_factory = img.fields.FieldFactory(field_class = cre, grid=cartesian_grid) 
     
     B_factory1 = WrappedJF12Factory(grid=cartesian_grid)
-    B_factory1.active_parameters = ('b_arm_1',)
+    B_factory1.active_parameters = ('b_arm_2',)
     B_factory1.priors = {        
-    'b_arm_1':img.priors.FlatPrior(xmin=0, xmax=10)
+    'b_arm_2':img.priors.FlatPrior(xmin=0, xmax=10)
     }
    
     B_factory2 = img.fields.FieldFactory(field_class=Bfield2, grid=cartesian_grid)
@@ -392,10 +394,10 @@ def JF12pipeline_basic():
     
     return #samples, summary
 
-start = perf_counter()
-JF12pipeline_basic()
-time_JF12basic = perf_counter() - start
+#start = perf_counter()
+#JF12pipeline_basic()
+#time_JF12basic = perf_counter() - start
 
 
 print("JF12Adder took: {}s".format(time_JF12adder))
-print("JF12basic took: {}s".format(time_JF12basic))
+#print("JF12basic took: {}s".format(time_JF12basic))

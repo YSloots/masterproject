@@ -256,7 +256,7 @@ def plot_JF12_turbulent():
         print("Saving figure")
         plt.savefig(figpath+'JF12turbulent{}.png'.format(int(label)))
         plt.close('all')
-plot_JF12_turbulent()
+#plot_JF12_turbulent()
 
 #===========================================================================
 #%% Make plot for JF12regular + JF12turbulent

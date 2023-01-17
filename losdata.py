@@ -67,6 +67,29 @@ head = ['GLON','GLAT','Dist','e_Dist','n_T','eps','e_eps','n_eps']
 #%% Plotting functions
 #===========================================================================
 
+
+def plot_temperature():
+    T = hiidata['eps'] * u.K/u.kpc
+    print(T)
+    plt.close('all')
+    sns.displot(T,bins=30,kde=True)
+    plt.title("Brightness temperature distribution")
+    plt.xlabel("Brightness temperature T (K/kpc)")
+    plt.tight_layout()
+    plt.savefig(figpath+'brightness.png')
+#plot_temperature()
+
+def plot_temperature_error():
+    e_T = hiidata['e_eps'] * u.K/u.kpc
+    print(e_T)
+    plt.close('all')
+    sns.displot(e_T,bins=30,kde=True)
+    plt.title("Temperature error distribution")
+    plt.xlabel("Temperature error e_T (K/kpc)")
+    plt.tight_layout()
+    plt.savefig(figpath+'brightnesserror.png')
+#plot_temperature_error()
+
 def plot_relative_temperror():
     T   = hiidata['eps'] * u.K/u.kpc
     e_T = hiidata['e_eps']  * u.K/u.kpc
