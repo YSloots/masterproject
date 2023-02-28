@@ -334,10 +334,11 @@ def scale_zdist(sigma_z = [0.03]):
 # Generate brightness samples
 def get_samples_relbrightness_error():
     """Do a sampling of Barm2 with JF12+ConstantAlphaCRE for different e_Te"""
-    error_scale        = np.linspace(0.01,1,20)
+    error_scale        = np.linspace(0.01,1,2)
+    #error_scale = np.linspace(0.01, 0.1, 10)
     results_dictionary = scale_brightness_error(rel_error=error_scale)
-    np.save(logdir+'samples_relbrightness_err.npy', results_dictionary)
-#get_samples_relbrightness_error()
+    #np.save(logdir+'samples_relbrightness_err.npy', results_dictionary)
+get_samples_relbrightness_error()
 
 # Plot results
 def plot_samples_relbrightness_error():
@@ -354,7 +355,7 @@ def plot_samples_relbrightness_error():
                                     xlabel=xlabel,
                                     ylabel=ylabel,
                                     title=title)
-    plt.savefig(figpath+'samples_relbrightness_errorV2.png')
+    plt.savefig(figpath+'samples_relbrightness_error.png')
     plt.close("all")
 #plot_samples_relbrightness_error()
 
@@ -366,7 +367,7 @@ def get_samples_reldistance_error():
     error_scale        = np.linspace(0.000,0.0015,20)
     results_dictionary = scale_distance_error(rel_error=error_scale)
     np.save(logdir+'samples_reldistance_err.npy', results_dictionary)
-get_samples_reldistance_error()
+#get_samples_reldistance_error()
 
 # Plot results
 def plot_samples_reldistance_error():
@@ -385,7 +386,7 @@ def plot_samples_reldistance_error():
                                     title=title)
     plt.savefig(figpath+'samples_reldistance_error.png')
     plt.close("all")
-plot_samples_reldistance_error()
+#plot_samples_reldistance_error()
 
 #==========================
 

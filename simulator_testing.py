@@ -2,8 +2,6 @@
 This script is used to do performance testing of the galactic los synchrotron simulator
 and the retrieval of model parameters from simulated datasets.
 
-
-
 """
 
 #%% Imports and settings
@@ -24,6 +22,7 @@ import matplotlib.pyplot as plt
 from astropy.coordinates import spherical_to_cartesian
 from astropy.coordinates import cartesian_to_spherical
 import struct
+from scipy.stats import truncnorm
 
 # Directory paths
 rundir    = 'runs/mockdata'
@@ -37,7 +36,10 @@ MHz   = 1e6 / u.s
 Ndata = 100
 observing_frequency = 90*MHz
 dunit = u.K/u.kpc
+global_dist_error = 0.0
+global_brightness_error = 0.01
 
+print("\n")
 
 
 #%% Code reduction functions
@@ -54,20 +56,33 @@ def fill_imagine_dataset(data):
                                                lon_col='lon')
     return img.observables.Measurements(fake_dset)
 
-def produce_mock_data(field_list, mea, config, noise=0.01):
-    """Runs the simulator once to produce a simulated dataset"""
-    test_sim   = SpectralSynchrotronEmissivitySimulator(measurements=mea, sim_config=config) 
+def produce_mock_data(field_list, mea, config, noise=global_brightness_error):
+    """
+    Runs the simulator once to produce a simulated dataset
+    - assume we know the exact positions for the HII regions
+    - add some gaussian noise to the brightness temperate with some relative error
+    """
+    # Set distance error to None (zero) when computing the los for mock data
+    if config['e_dist'] is None:
+        mock_config = config
+    else:
+        mock_config = config.copy()
+        mock_config['e_dist'] = None
+    test_sim   = SpectralSynchrotronEmissivitySimulator(measurements=mea, sim_config=mock_config) 
     simulation = test_sim(field_list)
     key = ('average_los_brightness', 0.09000000000000001, 'tab', None)
     sim_brightness = simulation[key].data[0] * simulation[key].unit
-    sim_brightness += np.random.normal(loc=0, scale=noise*sim_brightness, size=Ndata)*simulation[key].unit
-    return sim_brightness
+    brightness_error = noise*sim_brightness
+    brightness_error[brightness_error==0]=np.min(brightness_error[np.nonzero(brightness_error)])
+    return sim_brightness, brightness_error
 
-def randrange(minvalue,maxvalue,Nvalues):
+def randrange(minvalue,maxvalue,Nvalues,seed=3145):
+    np.random.seed(seed)
     """Returns uniform random values bewteen min and max"""
     return (maxvalue-minvalue)*np.random.rand(Nvalues)+minvalue
 
-def get_label_FB(Ndata):
+def get_label_FB(Ndata, seed=31415):
+    np.random.seed(seed)
     NF = int(0.2*Ndata) # 20% of all measurements are front measurements
     F  = np.full(shape=(NF), fill_value='F', dtype=str)
     B  = np.full(shape=(Ndata-NF), fill_value='B', dtype=str)
@@ -80,6 +95,12 @@ def load_JF12rnd(label, shape=(40,40,10,3)):
         arr = f.read()
         arr = struct.unpack("d"*(len(arr)//8), arr[:])
         arr = np.asarray(arr).reshape(shape)
+    return arr
+
+
+def load_turbulent_field(fname, shape=(40,40,10,3)):
+    print("Loading: "+fieldpath+fname)
+    arr = np.load(fieldpath+fname, allow_pickle=True)
     return arr
 
 
@@ -115,7 +136,7 @@ def test_simulator(Ndata, resolution = [30,30,30], keepinit=False):
     # Setup observing configuration
     observer = np.array([0,0,0])*u.kpc
     hIIdist  = (box_size-2*u.kpc)*np.random.rand(Ndata) + 1*u.kpc # uniform between [1, max-1] kpc
-    dist_err = hIIdist/10
+    dist_err = hIIdist*global_dist_error
     FB       = get_label_FB(Ndata)
     config = {'grid'    :cartesian_grid,
               'observer':observer,
@@ -228,7 +249,6 @@ def JF12constindexCREprofile_setup(samplecondition=None):
     - 'alpha'
     - 'allCRE'
     - 'Bamp+allCRE'
-    
     """
     
     if samplecondition == None: 
@@ -379,7 +399,8 @@ def turbulentJF12CREprofile_setup(turbscale, Brnd_label):
         os.system("rm -r runs/mockdata/*")
 
         # Setup magnetic field
-        Barray = load_JF12rnd(label=Brnd_label)
+        fname  = 'turbulent_nonuniform{}.npy'.format(Brnd_label)
+        Barray = load_turbulent_field(fname label=Brnd_label)
         Btotal = MagneticFieldAdder(grid=cartesian_grid,
                                     field_1=WrappedJF12,
                                     field_2=ArrayMagneticField,
@@ -387,11 +408,11 @@ def turbulentJF12CREprofile_setup(turbscale, Brnd_label):
                                                     'b_arm_6': -4.2, 'b_arm_7': .0, 'b_ring': .1, 'h_disk': .4, 'w_disk': .27,
                                                     'Bn': 1.4, 'Bs': -1.1, 'rn': 9.22, 'rs': 16.7, 'wh': .2, 'z0': 5.3, 'B0_X': 4.6,
                                                     'Xtheta_const': 49, 'rpc_X': 4.8, 'r0_X': 2.9, 
-                                                    'array_field_amplitude':beta, 'array_field': Barray*1e6*u.microgauss})
+                                                    'array_field_amplitude':beta, 'array_field': Barray*u.microgauss})
 
         # Produce simulated dataset with noise
-        mock_data = produce_mock_data(field_list=[cre,Btotal], mea=mea, config=config, noise=0.01)
-        sim_data = {'brightness':mock_data,'err':mock_data/10,'lat':config['lat'],'lon':config['lon']}
+        mock_data, error = produce_mock_data(field_list=[cre,Btotal], mea=mea, config=config, noise=global_brightness_error)
+        sim_data = {'brightness':mock_data,'err':error,'lat':config['lat'],'lon':config['lon']}
         sim_mea  = fill_imagine_dataset(sim_data)
 
         # Setup simulator
@@ -420,11 +441,10 @@ def turbulentJF12CREprofile_setup(turbscale, Brnd_label):
                                                     run_directory = rundir,
                                                     factory_list  = factory_list,
                                                     likelihood    = likelihood)
-        pipeline.sampling_controllers = {'evidence_tolerance': 0.9, 'n_live_points': 200}
+        pipeline.sampling_controllers = {'evidence_tolerance': 0.5, 'n_live_points': 200}
         
         # Run!
         results = pipeline()
-
         results_dictionary['summary_{}'.format(beta)] = pipeline.posterior_summary
         results_dictionary['samples_{}'.format(beta)] = pipeline.samples
 

@@ -109,17 +109,21 @@ def make_samples_and_evidence_plot(fig, data=(), xlabel='', ylabel='', title='')
     gs  = fig.add_gridspec(2, hspace=0, height_ratios= [3, 1])
     axs = gs.subplots(sharex=True)
     colors = ['tab:orange','tab:blue']
-    for c,d in zip(colors,data):
+    labels = ['high effect', 'low effect']
+    for c,d,l in zip(colors,data,labels):
         x, meany, stdy, evidence = d
         # Top plot: the sampled parameter
-        axs[0].plot(x,meany,c=c)
+        axs[0].plot(x,meany,c=c,label=l)
         axs[0].fill_between(x, meany-stdy, meany+stdy, alpha=0.2, color=c)
         # Bottem plot: the evidence
         axs[1].plot(x,evidence,c=c)
     axs[0].set_ylabel("         "+ylabel)
+    axs[0].set_ylim([98,104.5])
     axs[1].set_ylabel("Evidence log(Z)    ")
+    axs[1].set_ylim([-5000,1000])
     # Correct lables
     axs[1].set_xlabel(xlabel)
+    axs[0].legend()
     plt.suptitle(title,fontsize=20)
     plt.tight_layout()
     fig.align_ylabels(axs)
@@ -220,7 +224,7 @@ def get_geometry_effect_data():
     label = "LOW" # either HIGH or LOW
     results_dictionary = test_geometry(rel_error=error_scale, effect_type=label)
     np.save(logdir+'geometryeffect_{}.npy'.format(label), results_dictionary)
-get_geometry_effect_data()
+#get_geometry_effect_data()
 
 # Plot results
 def plot_geometry_effect():
