@@ -35,12 +35,13 @@ logdir    = 'log/'
 # Gobal testing constants
 import astropy.units as u
 MHz   = 1e6 / u.s
-GHz   = 1e9 / u.s
 Ndata = 100
 observing_frequency = 74*MHz
-dunit = u.K/u.kpc
+dunit = u.K
 global_dist_error = 0.000
 global_brightness_error = 0.01
+key = ('los_brightness_temperature', 0.07400000000000001, 'tab', None)
+
 
 print("\n")
 
@@ -50,7 +51,7 @@ print("\n")
 
 def fill_imagine_dataset(data):
     fake_dset = img.observables.TabularDataset(data,
-                                               name='average_los_brightness',
+                                               name='los_brightness_temperature',
                                                frequency=observing_frequency,
                                                units=dunit,
                                                data_col='brightness',
@@ -73,7 +74,6 @@ def produce_mock_data(field_list, mea, config, noise=global_brightness_error):
         mock_config['e_dist'] = None
     test_sim   = SpectralSynchrotronEmissivitySimulator(measurements=mea, sim_config=mock_config) 
     simulation = test_sim(field_list)
-    key = ('average_los_brightness', 0.07400000000000001, 'tab', None)
     sim_brightness = simulation[key].data[0] * simulation[key].unit
     brightness_error = noise*sim_brightness
     brightness_error[brightness_error==0]=np.min(brightness_error[np.nonzero(brightness_error)])
@@ -229,18 +229,40 @@ def plot_corner_and_evidence(fname,data,colnames):
     samp = samp_arrays[0]
     df   = pd.DataFrame(data=samp, columns=colnames)
     fig  = sns.pairplot(data=df, corner=True, kind='kde')
-    plt.title("Turbulent scale Brms = {}".format(x[0]))
+    plt.title("Turbulent Brms = {}".format(x[0]))
     plt.savefig(figpath+fname+'_pairplot{}.png'.format(x[0]))
     plt.close("all")
     samp = samp_arrays[-1]
     df   = pd.DataFrame(data=samp, columns=colnames)
     fig  = sns.pairplot(data=df, corner=True, kind='kde')
-    plt.title("Turbulent scale Brms = {}".format(x[-1]))
+    plt.title("Turbulent Brms = {}".format(x[-1]))
     plt.savefig(figpath+fname+'_pairplot{}.png'.format(x[-1]))
     plt.close("all")
     plt.plot(x, evidence)
     plt.savefig(figpath+fname+'_evidence.png')
     plt.close("all")
+
+def make_samples_evidence_plots(fig, data=(), pnames=(), true_pval=(), xlabel='', title=''):
+    scales, samples, evidence = data
+    mean_samp = []
+    for samp in samples: mean_samp.append(np.mean(samp,axis=0))
+    mean_samp = np.array(mean_samp)
+    gs  = fig.add_gridspec(2, hspace=0, height_ratios= [3,1])
+    axs = gs.subplots(sharex=True)
+    # Top plot: median parameter estimate of all params
+    for i,name in enumerate(pnames):
+        axs[0].plot(scales, mean_samp[:,i]/true_pval[i], label=name)
+    axs[0].set_ylabel("estimate / truth ",fontsize=15)
+    axs[0].legend()
+    # Middle plot: Evidence
+    axs[1].plot(scales, evidence)
+    axs[1].set_ylabel("log(Z)",fontsize=15)
+    # Correct lables
+    axs[1].set_xlabel(xlabel,fontsize=15)
+    plt.suptitle(title,fontsize=20)
+    plt.tight_layout()
+    fig.align_ylabels(axs)
+
 
 #%% Plotting routines for parameter inference runs
 #===================================================================================
@@ -260,17 +282,43 @@ def plot_samples_turbulence(Brnd_label):
     data = unpack_samples_and_evidence(results_dictionary)
     # Make figure
     fname = 'samples_turbulence{}'.format(Brnd_label)
-    pnames = ('b_arm_2','h_disk','spectral_index')
+    pnames = (r'$B_{arm2}$',r'$h_{disk}$','\N{GREEK SMALL LETTER ALPHA}')
     plot_corner_and_evidence(fname    = fname,
                              data     = data,
                              colnames = pnames)
-plot_samples_turbulence(Brnd_label=1)
+#plot_samples_turbulence(Brnd_label=1)
+
+def plot_relsamples_turbulence(Brnd_label):
+    results_dictionary = np.load(logdir+'samples_turbulence{}.npy'.format(Brnd_label), allow_pickle=True).item()
+    #print(results_dictionary)
+    data = unpack_samples_and_evidence(results_dictionary)
+    # Make figure
+    plt.close("all")
+    figure = plt.figure()
+    xlabel = "turbulent Brms (\N{GREEK SMALL LETTER MU}G)"
+    pnames = (r'$B_{arm2}$',r'$h_{disk}$','\N{GREEK SMALL LETTER ALPHA}')
+    true_pval = (3.0, 0.4, -3.0)
+    title  = "Pipeline performance overview"
+    make_samples_evidence_plots( fig=figure,
+                                      data=data,
+                                      xlabel=xlabel,
+                                      pnames=pnames,
+                                      true_pval=true_pval,
+                                      title=title)
+    plt.savefig(figpath+'samples_turbulence{}_relative.png'.format(Brnd_label))
+    plt.close("all")
+#plot_relsamples_turbulence(Brnd_label=1)
+
+
+
 
 def do_all_turbulent_models(labels = [1,2,3,4,5]):
     for label in labels:
         #get_samples_turbulence(Brnd_label=label)
         plot_samples_turbulence(Brnd_label=label)
-#do_all_turbulent_models()
+        plot_relsamples_turbulence(Brnd_label=label)
+do_all_turbulent_models()
+
 
 def plot_all_evidences(labels=[1,2,3,4,5]):
     plt.close("all")
@@ -278,13 +326,70 @@ def plot_all_evidences(labels=[1,2,3,4,5]):
         results_dictionary = np.load(logdir+'samples_turbulence{}.npy'.format(label), allow_pickle=True).item()
         scales, dummy, evidence = unpack_samples_and_evidence(results_dictionary)
         plt.plot(scales, evidence, label="Brnd {}".format(label))
-    plt.title("The effect of scaling the turbulent GMF")
-    plt.ylabel("Evidence log(Z)")
-    plt.xlabel("Turbulent Brms (muG)")
+    plt.title("The effect of scaling the turbulent GMF",fontsize=20)
+    plt.ylabel("log(Z)",fontsize=15)
+    plt.xlabel("turbulent Brms (\N{GREEK SMALL LETTER MU}G)",fontsize=15)
     plt.legend(title="Turbulent instance")
     plt.subplots_adjust(bottom=.25, left=.25)
     plt.tight_layout()
     plt.savefig(figpath+"evidence_turbulent_instances.png")
     plt.close("all")
+plot_all_evidences()
+
+
+#%% 
+def make_relsample_stack(fig, data_tuple=(), pnames=(), true_pval=(), xlabel='', title=''):
+    gs  = fig.add_gridspec(2, hspace=0, height_ratios= [3,1])
+    axs = gs.subplots(sharex=True)
+    colors = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple']
+    for d,data in enumerate(data_tuple):
+        scales, samples, evidence = data
+        mean_samp = []
+        for samp in samples: mean_samp.append(np.mean(samp,axis=0))
+        mean_samp = np.array(mean_samp)
+        # Top plot: median parameter estimate of all params
+        for i,name in enumerate(pnames):
+            axs[0].plot(scales, mean_samp[:,i]/true_pval[i], color=colors[i])
+        # Middle plot: Evidence
+        axs[1].plot(scales, evidence, color=colors[d], label="Brnd{}".format(d))
+    #axs[1].legend(title="Turbulent instance")
+    # Double plot for labels (Quick dirty hack)
+    mean_samp = []
+    for samp in samples: mean_samp.append(np.mean(samp,axis=0))
+    mean_samp = np.array(mean_samp)
+    # Top plot: median parameter estimate of all params
+    for i,name in enumerate(pnames):
+        axs[0].plot(scales, mean_samp[:,i]/true_pval[i], color=colors[i], label=pnames[i])
+    axs[0].legend(title="Parameter")
     
-#plot_all_evidences()
+    # Correct lables
+    axs[0].set_ylabel("estimate / truth ",fontsize=15)
+    axs[1].set_ylabel("log(Z)",fontsize=15)
+    axs[1].set_xlabel(xlabel,fontsize=15)
+    plt.suptitle(title,fontsize=20)
+    plt.tight_layout()
+    fig.align_ylabels(axs)
+
+
+def plot_all_relsamples_turbulence(Brnd_label = [1,2,3,4,5]):
+    data_tuple = () # empty tuple
+    for label in Brnd_label:
+        results_dictionary = np.load(logdir+'samples_turbulence{}.npy'.format(label), allow_pickle=True).item()
+        data_tuple += (unpack_samples_and_evidence(results_dictionary),)
+    # Make figure
+    plt.close("all")
+    figure = plt.figure()
+    xlabel = "turbulent Brms (\N{GREEK SMALL LETTER MU}G)"
+    pnames = (r'$B_{arm2}$',r'$h_{disk}$','\N{GREEK SMALL LETTER ALPHA}')
+    true_pval = (3.0, 0.4, -3.0)
+    title  = "Pipeline performance overview"
+    make_relsample_stack(   fig=figure,
+                            data_tuple=data_tuple,
+                            xlabel=xlabel,
+                            pnames=pnames,
+                            true_pval=true_pval,
+                            title=title)
+    plt.savefig(figpath+'relsamples_stack_turbulence.png')
+    plt.close("all")
+
+plot_all_relsamples_turbulence()

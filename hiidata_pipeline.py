@@ -41,25 +41,26 @@ print("\n")
 
 with fits.open(datapath+'HII_LOS.fit') as hdul:
     hiidata = hdul[1].data
-head = ['GLON','GLAT','Dist','e_Dist','n_T','eps','e_eps','n_eps']
+head = ['GLON','GLAT','Dist','e_Dist','T','e_T','n_T']
 
 # Data definitions
 observing_frequency = 74*MHz
-dunit = u.K/u.kpc
+dunit = u.K
 
 # Get data columns
-T        = hiidata['eps']*dunit 
-T_err    = hiidata['e_eps']*dunit 
+T        = hiidata['T']*dunit 
+T_err    = hiidata['e_T']*dunit
+FB       = hiidata['n_T']
 hiidist  = hiidata['Dist']*u.kpc
 dist_err = hiidata['e_Dist']*u.kpc
 lat      = hiidata['GLAT']*2*pi/360 * u.rad
 lon      = hiidata['GLON']*2*pi/360 * u.rad
-FB       = hiidata['n_eps']
+
 
 # Format imagine data set
 data    = {'brightness':T,'err':T_err,'lat':lat,'lon':lon}
 imgdata = img.observables.TabularDataset(data,
-                                        name='average_los_brightness',
+                                        name='los_brightness_temperature',
                                         frequency=observing_frequency,
                                         units=dunit,
                                         data_col='brightness',
@@ -188,12 +189,12 @@ def unpack_samples_and_evidence(dictionary={}):
 def plot_corner(fname,data,colnames):
     x, samp_arrays, evidence = data
     samp = samp_arrays[0]
-    #print("Figure at x={} and evidence={}".format(x[-1],evidence[-1]))
+    print("Figure at x={} and evidence={}".format(x[-1],evidence[-1]))
     # Make cornerplot
     plt.close("all")
     df  = pd.DataFrame(data=samp, columns=colnames)
     fig = sns.pairplot(data=df, corner=True, kind='kde')
-    plt.title("Parameter estimates,     evidence={}".format(evidence[0]))
+    #plt.title("Parameter estimates,     evidence={}".format(evidence[0]))
     plt.savefig(figpath+fname+'_pairplot.png')
     plt.close("all")
 
@@ -216,7 +217,7 @@ def plot_samples_spectral_hardening(spectral_type="hardening"):
     plot_corner(fname    = fname,
                 data     = data,
                 colnames = pnames)
-#plot_samples_spectral_hardening()
+plot_samples_spectral_hardening()
 
 
 def plot_samples_spectral_constant(spectral_type="constant"):
@@ -230,3 +231,18 @@ def plot_samples_spectral_constant(spectral_type="constant"):
                 colnames = pnames)
 plot_samples_spectral_constant()
 
+# Plot results
+def plot_samples_spectral_constant(spectral_type="constant"):
+    results_dictionary = np.load(logdir+'hiidata_pipeline_{}.npy'.format(spectral_type), allow_pickle=True).item()
+    data = unpack_samples_and_evidence(results_dictionary)
+    x, samp_arrays, evidence = data
+    print("Figure at x={} and evidence={}".format(x[-1],evidence[-1]))
+    samp   = samp_arrays[-1][:,0] # worst case noise
+    # Make figure
+    plt.close("all")
+    sns.displot(samp,kde=True)
+    plt.title("Posterior Constant Spectral Index")
+    plt.xlabel("\N{GREEK SMALL LETTER alpha}")
+    plt.tight_layout()
+    plt.savefig(figpath+'hiidata_pipeline_samples_constant_index.png')
+plot_samples_spectral_constant()

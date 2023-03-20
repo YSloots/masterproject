@@ -29,7 +29,7 @@ import seaborn as sns
 import pandas as pd
 
 # Directory paths
-rundir    = 'runs/'
+rundir    = 'runs/spectralhardening/'
 figpath   = 'figures/spectralhardening/'
 fieldpath = 'arrayfields/'
 logdir    = 'log/'
@@ -39,9 +39,10 @@ import astropy.units as u
 MHz   = 1e6 / u.s
 Ndata = 100
 observing_frequency = 74*MHz
-dunit = u.K/u.kpc
-global_dist_error = 0.001
+dunit = u.K
+global_dist_error = 0.000
 global_brightness_error = 0.01
+key = ('los_brightness_temperature', 0.07400000000000001, 'tab', None)
 
 print("\n")
 
@@ -51,7 +52,7 @@ print("\n")
 
 def fill_imagine_dataset(data):
     fake_dset = img.observables.TabularDataset(data,
-                                               name='average_los_brightness',
+                                               name='los_brightness_temperature',
                                                frequency=observing_frequency,
                                                units=dunit,
                                                data_col='brightness',
@@ -74,7 +75,6 @@ def produce_mock_data(field_list, mea, config, noise=global_brightness_error):
         mock_config['e_dist'] = None
     test_sim   = SpectralSynchrotronEmissivitySimulator(measurements=mea, sim_config=mock_config) 
     simulation = test_sim(field_list)
-    key = ('average_los_brightness', 0.07400000000000001, 'tab', None)
     sim_brightness = simulation[key].data[0] * simulation[key].unit
     brightness_error = noise*sim_brightness
     brightness_error[brightness_error==0]=np.min(brightness_error[np.nonzero(brightness_error)])
@@ -124,8 +124,8 @@ def unpack_samples_and_evidence(dictionary={}):
 
 def plot_corner_and_evidence(fname,data,colnames):
     x, samp_arrays, evidence = data
-    samp   = samp_arrays[0]
-    print("Figure at x={} and evidence={}".format(x[0],evidence[0]))
+    samp   = samp_arrays[-1]
+    print("Figure at x={} and evidence={}".format(x[-1],evidence[-1]))
     # Make cornerplot
     plt.close("all")
     df  = pd.DataFrame(data=samp, columns=colnames)
@@ -283,13 +283,13 @@ def plot_corner_and_evidence(fname,data,colnames):
 #===================================================================================
 spectral_types = ["constant","hardening"]
 
-# Generate brightness samples
-def get_samples_spectral_hardening():
+# Generate samples
+def get_samples_spectral_hardening(spectral_types):
     error_scale = np.linspace(0.01,1.0,20)
     for spec in spectral_types:
         results_dictionary = run_pipeline(rel_error=error_scale, spectral_type=spec)
         np.save(logdir+'samples_spectral_{}.npy'.format(spec), results_dictionary)
-#get_samples_spectral_hardening()
+#get_samples_spectral_hardening(spectral_types=spectral_types)
 
 # Plot results
 def plot_evidence_spectral_hardening():
@@ -299,11 +299,12 @@ def plot_evidence_spectral_hardening():
         evidence  = results_dictionary['evidence']
         rel_error = results_dictionary['scales'] 
         plt.plot(rel_error, evidence, label=spec)
-    plt.ylim([-100, 400])
-    plt.title("Model comparison for CRE spectrum properties")
-    plt.ylabel("Evidence log(Z)")
-    plt.xlabel("Relative brightness error (eTB/TB)")
+    plt.ylim([-1000, 400])
+    plt.title("CRE-model comparison",fontsize=20)
+    plt.ylabel("log(Z)",fontsize=15)
+    plt.xlabel("Relative brightness error (eT/T)",fontsize=15)
     plt.legend(title="Spectrum types")
+    plt.tight_layout()
     plt.savefig(figpath+"evidence_spectral_hardening.png")
     plt.close("all")
 #plot_evidence_spectral_hardening()
@@ -318,13 +319,22 @@ def plot_samples_spectral_hardening(spectral_type="hardening"):
     plot_corner_and_evidence(fname    = fname,
                              data     = data,
                              colnames = pnames)
-#plot_samples_spectral_hardening()
+plot_samples_spectral_hardening()
 
 # Plot results
 def plot_samples_spectral_constant(spectral_type="constant"):
     results_dictionary = np.load(logdir+'samples_spectral_{}.npy'.format(spectral_type), allow_pickle=True).item()
     data = unpack_samples_and_evidence(results_dictionary)
-
+    x, samp_arrays, evidence = data
+    print("Figure at x={} and evidence={}".format(x[-1],evidence[-1]))
+    samp   = samp_arrays[-1][:,0] # worst case noise
+    # Make figure
+    plt.close("all")
+    sns.displot(samp,kde=True)
+    plt.title("Posterior Constant Spectral Index")
+    plt.xlabel("\N{GREEK SMALL LETTER alpha}")
+    plt.tight_layout()
+    plt.savefig(figpath+'samples_constant_index.png')
 plot_samples_spectral_constant()
 
 

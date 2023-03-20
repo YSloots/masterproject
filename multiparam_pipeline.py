@@ -32,12 +32,12 @@ logdir    = 'log/'
 # Gobal testing constants
 import astropy.units as u
 MHz   = 1e6 / u.s
-GHz   = 1e9 / u.s
 Ndata = 100
 observing_frequency = 74*MHz
-dunit = u.K/u.kpc
-global_dist_error = 0.001
+dunit = u.K
+global_dist_error = 0.000
 global_brightness_error = 0.01
+key = ('los_brightness_temperature', 0.07400000000000001, 'tab', None)
 
 print("\n")
 
@@ -47,7 +47,7 @@ print("\n")
 
 def fill_imagine_dataset(data):
     fake_dset = img.observables.TabularDataset(data,
-                                               name='average_los_brightness',
+                                               name='los_brightness_temperature',
                                                frequency=observing_frequency,
                                                units=dunit,
                                                data_col='brightness',
@@ -70,7 +70,6 @@ def produce_mock_data(field_list, mea, config, noise=global_brightness_error):
         mock_config['e_dist'] = None
     test_sim   = SpectralSynchrotronEmissivitySimulator(measurements=mea, sim_config=mock_config) 
     simulation = test_sim(field_list)
-    key = ('average_los_brightness', 0.07400000000000001, 'tab', None)
     sim_brightness = simulation[key].data[0] * simulation[key].unit
     brightness_error = noise*sim_brightness
     brightness_error[brightness_error==0]=np.min(brightness_error[np.nonzero(brightness_error)])
@@ -204,7 +203,7 @@ def multiparameter_setup(samplecondition=None):
         'scale_height':img.priors.FlatPrior(xmin=0.1*u.kpc, xmax=3*u.kpc),
         'central_density':img.priors.FlatPrior(xmin=1e-6*u.cm**-3, xmax=1e-4*u.cm**-3),
         'spectral_index':img.priors.FlatPrior(xmin=-5, xmax=-2.1)}
-        B_factory.active_parameters = ('b_arm_1','b_arm_2','b_arm_3','b_arm_4','b_arm_5','b_arm_6','b_arm_7','b_ring')
+        B_factory.active_parameters = ('b_arm_1','b_arm_2','b_arm_3','b_arm_4','b_arm_5','b_arm_6','b_arm_7','b_ring','h_disk','w_disk')
         
         B_factory.priors = {        
         'b_arm_1':img.priors.FlatPrior(xmin=-10, xmax=10),
@@ -214,7 +213,9 @@ def multiparameter_setup(samplecondition=None):
         'b_arm_5':img.priors.FlatPrior(xmin=-10, xmax=10),
         'b_arm_6':img.priors.FlatPrior(xmin=-10, xmax=10),
         'b_arm_7':img.priors.FlatPrior(xmin=-10, xmax=10),
-        'b_ring' :img.priors.FlatPrior(xmin=-10, xmax=10)}
+        'b_ring' :img.priors.FlatPrior(xmin=-10, xmax=10),
+        'h_disk' :img.priors.FlatPrior(xmin=  0, xmax=2),
+        'w_disk' :img.priors.FlatPrior(xmin=  0, xmax=2)}
         """
         B_factory.priors = {        
         'b_arm_1':img.priors.GaussianPrior(mu=0.1, sigma=1.8),
@@ -275,7 +276,7 @@ def plot_samples_multiparameter(run='all'):
     if run == 'three': 
         pnames = ('b_arm_2','h_disk','spectral_index')
     if run == 'all':
-        pnames = ('b_arm_1','b_arm_2','b_arm_3',' b_arm_4','b_arm_5','b_arm_6','b_arm_7','b_ring')
+        pnames = ('b_arm_1','b_arm_2','b_arm_3',' b_arm_4','b_arm_5','b_arm_6','b_arm_7','b_ring','h_disk','w_disk')
         pnames += ('scale_radius','scale_height','central_density','spectral_index')
     fname = 'samples_multiparam_{}_worstcase'.format(run)
     plot_corner(fname    = fname,

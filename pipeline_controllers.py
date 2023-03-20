@@ -18,8 +18,8 @@ import struct
 from scipy.stats import truncnorm
 
 # Directory paths
-rundir    = 'runs/performance'
-figpath   = 'figures/performance/'
+rundir    = 'runs/pipelinecontrollers' # ran with performance/ dictionary
+figpath   = 'figures/pipelinecontrollers/'
 fieldpath = 'arrayfields/'
 logdir    = 'log/'
 
@@ -28,9 +28,10 @@ import astropy.units as u
 MHz   = 1e6 / u.s
 Ndata = 100
 observing_frequency = 74*MHz
-dunit = u.K/u.kpc
+dunit = u.K
 global_dist_error = 0.000
 global_brightness_error = 0.01
+key = ('los_brightness_temperature', 0.07400000000000001, 'tab', None)
 
 print("\n")
 
@@ -39,7 +40,7 @@ print("\n")
 
 def fill_imagine_dataset(data):
     fake_dset = img.observables.TabularDataset(data,
-                                               name='average_los_brightness',
+                                               name='los_brightness_temperature',
                                                frequency=observing_frequency,
                                                units=dunit,
                                                data_col='brightness',
@@ -62,7 +63,6 @@ def produce_mock_data(field_list, mea, config, noise=global_brightness_error):
         mock_config['e_dist'] = None
     test_sim   = SpectralSynchrotronEmissivitySimulator(measurements=mea, sim_config=mock_config) 
     simulation = test_sim(field_list)
-    key = ('average_los_brightness', 0.07400000000000001, 'tab', None)
     sim_brightness = simulation[key].data[0] * simulation[key].unit
     brightness_error = noise*sim_brightness
     brightness_error[brightness_error==0]=np.min(brightness_error[np.nonzero(brightness_error)])
@@ -122,16 +122,17 @@ def make_samples_evidence_time_plots(fig, data=(), pnames=(), true_pval=(), xlab
     # Top plot: median parameter estimate of all params
     for i,name in enumerate(pnames):
         axs[0].plot(scales, mean_samp[:,i]/true_pval[i], label=name)
-    axs[0].set_ylabel("parameter estimate/truth ")
+    axs[0].set_ylabel("estimate / truth", fontsize=12)
     axs[0].legend()
     # Middle plot: Evidence
     axs[1].plot(scales, evidence)
-    axs[1].set_ylabel("log(Z)")
+    axs[1].set_ylabel(" log(Z)", fontsize=12)
     # Bottem plot: Computation time
     axs[2].plot(scales, time)
-    axs[2].set_ylabel("computation time (s)")
+    axs[2].set_ylabel("time (s) ", fontsize=12)
     # Correct lables
     axs[2].set_xlabel(xlabel)
+    #plt.ticklabel_format(axis="y", style="sci", scilimits=(0,0))
     plt.suptitle(title,fontsize=20)
     plt.tight_layout()
     fig.align_ylabels(axs)
@@ -269,7 +270,7 @@ def plot_samples(controller_type=''):
     plt.close("all")
     figure = plt.figure()
     xlabel = controller_type
-    pnames = ('b_arm_2','h_disk','spectral_index')
+    pnames = (r'$B_{arm2}$',r'$h_{disk}$','\N{GREEK SMALL LETTER ALPHA}')
     true_pval = (3.0, 0.4, -3.0)
     title  = "Pipeline performance overview"
     make_samples_evidence_time_plots( fig=figure,

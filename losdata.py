@@ -27,7 +27,7 @@ ugauss_B = 1e-6 * gauss_B
 
 
 # Directory paths
-figpath  = 'figures/'
+figpath  = 'figures/data/'
 datapath = 'data/'
 
 print('\n')
@@ -51,11 +51,12 @@ fname = 'HII_LOS.fit'
 with fits.open(datapath+fname) as hdul:
     hiidata = hdul[1].data
 
-head = ['GLON','GLAT','Dist','e_Dist','n_T','eps','e_eps','n_eps']
+head = ['GLON','GLAT','Dist','e_Dist','T','e_T','n_T']
 
-#print(hiidata['n_T'][:20])
+#print(hiidata['n_T'][:20]) # F or B
 #print("We have {} Hii regions!".format(len(hiidata['Dist'])))
-#print(len(hiidata['n_eps']))
+#print(hiidata['T'][:20])
+#print(hiidata['n_T'][:20])
 
 #%% Determine reasonable integration box
 #===========================================================================
@@ -69,30 +70,30 @@ head = ['GLON','GLAT','Dist','e_Dist','n_T','eps','e_eps','n_eps']
 
 
 def plot_temperature():
-    T = hiidata['eps'] * u.K/u.kpc
+    T = hiidata['T'] * u.K
     print(T)
     plt.close('all')
     sns.displot(T,bins=30,kde=True)
     plt.title("Brightness temperature distribution")
-    plt.xlabel("Brightness temperature T (K/kpc)")
+    plt.xlabel("T (K)")
     plt.tight_layout()
     plt.savefig(figpath+'brightness.png')
-#plot_temperature()
+plot_temperature()
 
 def plot_temperature_error():
-    e_T = hiidata['e_eps'] * u.K/u.kpc
+    e_T = hiidata['e_T'] * u.K
     print(e_T)
     plt.close('all')
     sns.displot(e_T,bins=30,kde=True)
-    plt.title("Temperature error distribution")
-    plt.xlabel("Temperature error e_T (K/kpc)")
+    plt.title("Brightness temperature error distribution")
+    plt.xlabel(" e_T (K)")
     plt.tight_layout()
     plt.savefig(figpath+'brightnesserror.png')
-#plot_temperature_error()
+plot_temperature_error()
 
 def plot_relative_temperror():
-    T   = hiidata['eps'] * u.K/u.kpc
-    e_T = hiidata['e_eps']  * u.K/u.kpc
+    T   = hiidata['T'] * u.K
+    e_T = hiidata['e_T']  * u.K
     rel_err   = e_T/T
     plt.close('all')
     sns.displot(rel_err,bins=30,kde=True)
@@ -100,7 +101,7 @@ def plot_relative_temperror():
     plt.xlabel("Relative error (e_T/T)")
     plt.tight_layout()
     plt.savefig(figpath+'relativeTerr.png')
-#plot_relative_temperror()
+plot_relative_temperror()
 
 def plot_rdist():
     hiidist = hiidata['Dist'] * u.kpc

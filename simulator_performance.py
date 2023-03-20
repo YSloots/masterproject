@@ -30,10 +30,10 @@ MHz   = 1e6 / u.s
 GHz   = 1e9 / u.s
 Ndata = 100
 observing_frequency = 74*MHz
-dunit = u.K/u.kpc
+dunit = u.K
 global_dist_error = 0.001
 global_brightness_error = 0.01
-key = ('average_los_brightness', 0.07400000000000001, 'tab', None) # simulation key
+key = ('los_brightness_temperature', 0.07400000000000001, 'tab', None) # simulation key
 
 print("\n")
 
@@ -47,7 +47,7 @@ def randrange(minvalue,maxvalue,Nvalues,seed=3145):
 
 def fill_imagine_dataset(data):
     fake_dset = img.observables.TabularDataset(data,
-                                               name='average_los_brightness',
+                                               name='los_brightness_temperature',
                                                frequency=observing_frequency,
                                                units=dunit,
                                                data_col='brightness',
@@ -149,5 +149,5 @@ def inspect_simulator_performance():
     print(np.mean(init_time[1:]), np.std(init_time[1:]))
     print(np.mean(simu_time[1:]), np.std(simu_time[1:]))
 
-#get_simulation_time(Nsimulations=100)
+get_simulation_time(Nsimulations=100)
 inspect_simulator_performance()
